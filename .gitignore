@@ -1,4 +1,47 @@
+# Python
 *.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+venv3/
+.env
+.venv
+env/
+
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+*.deb
+build_deb/
+.eggs/
+
+# User Data & Config
+*.log
+logfile.dat
+config.ini
+*.ini
+data/
+!data/Readme-stats.txt
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+dump.txt
+test_audio.py
+
+# Dependencies (Python 2/3 compatibility)
 pyglet/
 future/
 past/
