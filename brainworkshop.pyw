@@ -127,11 +127,11 @@ def edit_config_ini():
     sys.exit(0)
 
 def quit_with_error(message='', postmessage='', quit=True, trace=True):
-    if message:     print >> sys.stderr, message + '\n'
+    if message:     print(message + '\n', file=sys.stderr)
     if trace:       
-        print >> sys.stderr, _("Full text of error:\n")
+        print(_("Full text of error:\n"), file=sys.stderr)
         traceback.print_exc()
-    if postmessage: print >> sys.stderr, '\n\n' + postmessage
+    if postmessage: print('\n\n' + postmessage, file=sys.stderr)
     if quit:        sys.exit(1)
 
 CONFIGFILE_DEFAULT_CONTENTS = """
@@ -1010,7 +1010,7 @@ def default_ticks(mode):
         bonus = ((mode & 128)/128) * cfg.BONUS_TICKS_CRAB
         if mode & 768:
             bonus += cfg['BONUS_TICKS_MULTI_%i' % ((mode & 768)/256+1)]
-        if DEBUG: print "Adding a bonus of %i ticks for mode %i" % (bonus, mode)
+        if DEBUG: print("Adding a bonus of %i ticks for mode %i" % (bonus, mode))
         return bonus + default_ticks(mode % 128)
     else:
         return cfg.TICKS_DEFAULT
@@ -1320,7 +1320,7 @@ class Graph:
     
     def next_style(self):
         self.style = (self.style + 1) % len(self.styles)
-        print "style = %s" % self.styles[self.style] # fixme:  change the labels
+        print("style = %s" % self.styles[self.style]) # fixme:  change the labels
         self.parse_stats()
 
     def reset_dictionaries(self):
@@ -1491,7 +1491,7 @@ class Graph:
         bottom = center_y - height // 2
         try:
             dictionary = self.dictionaries[self.graph]
-        except: print self.graph
+        except: print(self.graph)
         graph_title = mode.long_mode_names[self.graph] + _(' N-Back')
         
         self.batch.add(3, GL_LINE_STRIP, 
@@ -2118,7 +2118,7 @@ class GameSelect(Menu):
                 self.newmode = candidate
             else: self.newmode = False
         else:
-            if DEBUG: print candidates, base
+            if DEBUG: print(candidates, base)
             self.newmode = False 
 
     def close(self):
@@ -4148,7 +4148,7 @@ def generate_stimulus():
                         back = real_back + i
                 if back == real_back: back = None # if none of the above worked
                 elif DEBUG:
-                    print 'Forcing interference for %s' % current
+                    print('Forcing interference for %s' % current)
             
             if back:            
                 nback_trial = mode.trial_number - back - 1
@@ -4160,12 +4160,12 @@ def generate_stimulus():
                     if matching_stim in conflict_positions: # swap 'em
                         i = positions.index(matching_stim)
                         if DEBUG:
-                            print "moving position%i from %i to %i for %s" % (i+1, positions[i], mode.current_stim[current], current)
+                            print("moving position%i from %i to %i for %s" % (i+1, positions[i], mode.current_stim[current], current))
                         mode.current_stim['position' + repr(i+1)] = mode.current_stim[current]
                         positions[i] = mode.current_stim[current]
                     positions[int(current[-1])-1] = matching_stim
                 if DEBUG:
-                    print "setting %s to %i" % (current, matching_stim)
+                    print("setting %s to %i" % (current, matching_stim))
                 mode.current_stim[current] = matching_stim
 
         if multi > 1:
@@ -4232,10 +4232,10 @@ def generate_stimulus():
     else:
         variable = 0
     if DEBUG and multi < 2:
-        print "trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
+        print("trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
                 (mode.trial_number, mode.current_stim['position1'], mode.current_stim['audio'], 
                  mode.current_stim['color'], mode.current_stim['vis'], \
-                 mode.current_stim['number'], mode.current_operation, variable)
+                 mode.current_stim['number'], mode.current_operation, variable))
     if multi == 1:
         visuals[0].spawn(mode.current_stim['position1'], mode.current_stim['color'], 
                          mode.current_stim['vis'], mode.current_stim['number'], 
@@ -4244,19 +4244,19 @@ def generate_stimulus():
         for i in range(1, multi+1):
             if cfg.MULTI_MODE == 'color':
                 if DEBUG:
-                    print "trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
+                    print("trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
                         (mode.trial_number, mode.current_stim['position' + repr(i)], mode.current_stim['audio'], 
                         cfg.VISUAL_COLORS[i-1], mode.current_stim['vis'+repr(i)], \
-                        mode.current_stim['number'], mode.current_operation, variable)
+                        mode.current_stim['number'], mode.current_operation, variable))
                 visuals[i-1].spawn(mode.current_stim['position'+repr(i)], cfg.VISUAL_COLORS[i-1], 
                                    mode.current_stim['vis'+repr(i)], mode.current_stim['number'], 
                                    mode.current_operation, variable)
             else:
                 if DEBUG:
-                    print "trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
+                    print("trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
                         (mode.trial_number, mode.current_stim['position' + repr(i)], mode.current_stim['audio'], 
                         mode.current_stim['vis'+repr(i)], i, \
-                        mode.current_stim['number'], mode.current_operation, variable)
+                        mode.current_stim['number'], mode.current_operation, variable))
                 visuals[i-1].spawn(mode.current_stim['position'+repr(i)], mode.current_stim['vis'+repr(i)], 
                                    i,                            mode.current_stim['number'], 
                                    mode.current_operation, variable)
