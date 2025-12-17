@@ -1,61 +1,153 @@
-# Brain Workshop (Modernized Version)
+# Brain Workshop (Modernized Linux Edition)
 
-This is a modernized version of **Brain Workshop**, the Dual N-Back mental exercise game. This fork includes significant fixes and improvements to run correctly on modern Linux systems with newer libraries.
+![Brain Workshop Logo](res/misc/brain/brain.png)
 
-## 🚀 Key Improvements & Fixes
+> **A robust, open-source implementation of the Dual N-Back mental exercise, modernized for contemporary Linux systems.**
 
-### 1. Audio System Overhaul
-*   **Fixed Cut-off Audio**: Replaced the obsolete `ManagedSoundPlayer` with a custom `play_sound_managed` system and a garbage collection routine (`cleanup_players`). This ensures audio clips play fully without being prematurely destroyed.
-*   **Independent Channel Configuration**: Added support for configuring Left and Right audio channels independently in the settings menu.
-*   **3D Audio Positioning**: Verified and fixed spatial audio (Left/Right/Center) for dual audio modes.
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Python Version](https://img.shields.io/badge/python-2.7-yellow.svg)](https://www.python.org/download/releases/2.7/)
+[![Platform](https://img.shields.io/badge/platform-linux-green.svg)]()
 
-### 2. Graphics & Rendering
-*   **Modern OpenGL Compatibility**: Replaced deprecated `GL_POLYGON` usage with `GL_TRIANGLES` to prevent crashes on modern graphics drivers.
-*   **Responsive Design**: The game window is now fully responsive. The game board (`Field`), visual elements (`Visual`), and menus automatically resize and reposition when the window size changes.
+## 🧠 What is Brain Workshop?
 
-### 3. User Interface (UI)
-*   **Menu Fixes**: Resolved a critical bug where menus (C, S, I) were inaccessible. Refactored the `Menu` class event handling to correctly register and unregister events with `window.push_handlers`.
-*   **Improved Aesthetics**: Aligned menu options and values into columns for better readability.
-*   **Code Cleanup**: Fixed indentation errors and updated syntax (e.g., `repr()` instead of backticks) to reduce warnings and improve compatibility.
+Brain Workshop is a free, open-source implementation of the **Dual N-Back** task, a mental exercise that has been shown in research studies to potentially improve **working memory (short-term memory)** and **fluid intelligence**.
 
-### 4. Linux Packaging
-*   **Easy Installation**: Added a `Makefile` for standard installation (`sudo make install`).
-*   **Desktop Integration**: Included a `.desktop` file so the game appears in your system application menu.
-*   **Debian Packaging**: Added `build_deb.sh` to generate `.deb` packages for Ubuntu/Debian/Mint.
+In the Dual N-Back task, you are presented with a sequence of visual and auditory stimuli. Your goal is to indicate when the current stimulus matches the one from *N* steps earlier in the sequence.
 
-## 🛠️ Installation
+## 🚀 The Modernization Project
+
+The original Brain Workshop (v4.8.4) was built years ago and relies on older libraries that often break on modern Linux distributions (Arch, Ubuntu 20.04+, Fedora). This repository contains a **heavily patched and modernized version** that restores full functionality and adds new features.
+
+### Key Improvements in This Version
+
+#### 🔊 Audio Engine Overhaul
+*   **No More Cut-offs**: Replaced the obsolete `ManagedSoundPlayer` with a robust, custom audio management system. Sounds now play to completion without being garbage-collected prematurely.
+*   **3D Spatial Audio**: Fixed and verified spatial audio positioning. You can now clearly distinguish Left, Right, and Center audio channels.
+*   **Independent Channels**: Added a new configuration menu to independently set the audio channel (Left/Right/Center) for both primary and secondary sound sets.
+
+#### 🖥️ Graphics & Rendering
+*   **Modern OpenGL Fixes**: Replaced deprecated `GL_POLYGON` calls with `GL_TRIANGLES`, fixing crashes and rendering artifacts on modern GPU drivers.
+*   **Responsive Design**: The entire game interface (grid, squares, menus) is now **fully responsive**. Resize the window or maximize it, and the game adapts perfectly to your screen resolution.
+
+#### 🎮 User Interface & Input
+*   **Menu System Fixes**: Resolved critical bugs that made configuration menus (Keys C, S, I) inaccessible.
+*   **Event Handling**: Refactored the event loop to correctly register/unregister handlers, preventing input conflicts.
+*   **Visual Polish**: Improved menu alignment and text rendering for better readability.
+
+---
+
+## 📦 Installation
 
 ### Prerequisites
-*   Python 2.7
-*   Pyglet 1.4.10 (Recommended)
+*   **Python 2.7**: This legacy application requires Python 2.
+*   **Pyglet 1.4.10**: The specific version required for stability.
+*   **AVBin**: Required for audio decoding (optional but recommended).
 
-### Option 1: Direct Install
+### Method 1: Quick Install (Debian/Ubuntu/Mint)
+We provide a build script to generate a native `.deb` package.
+
 ```bash
+# 1. Build the package
+./build_deb.sh
+
+# 2. Install the generated file
+sudo dpkg -i brainworkshop_4.8.4_all.deb
+
+# 3. Fix dependencies if needed
+sudo apt-get install -f
+```
+
+### Method 2: Manual Installation (Arch/Fedora/Other)
+You can install the game directly to `/opt/brainworkshop`.
+
+```bash
+# 1. Install Python 2 and pip
+# (Command varies by distro, e.g., 'pacman -S python2 python2-pip' on Arch)
+
+# 2. Install dependencies
+pip2 install pyglet==1.4.10
+
+# 3. Install the game
 sudo make install
 ```
-To uninstall:
+
+To uninstall later:
 ```bash
 sudo make uninstall
 ```
 
-### Option 2: Build .deb Package
-```bash
-./build_deb.sh
-sudo dpkg -i brainworkshop_4.8.4_all.deb
-```
+---
 
-## 🎮 How to Play
-Run the game from your application menu or terminal:
-```bash
-brainworkshop
-```
+## 🎮 Controls & Hotkeys
 
-## 📂 Project Structure
-*   `brainworkshop.pyw`: Main game source code.
-*   `res/`: Resources (images, sounds).
-*   `data/`: User data storage.
-*   `Makefile`: Installation script.
-*   `build_deb.sh`: Debian package builder.
+| Key | Action |
+| :--- | :--- |
+| **A** | Match **Position** (Visual) |
+| **L** | Match **Sound** (Audio) |
+| **Space** | Start Game / Skip Title |
+| **Esc** | Pause / Exit to Menu |
+| **M** | Toggle Manual Mode |
+| **C** | Configuration Menu (Game Modes) |
+| **S** | Sound Settings Menu |
+| **I** | Image/Theme Settings Menu |
+| **G** | View Progress Graph |
+
+*Note: Keys can be remapped in `config.ini` or the settings menu.*
 
 ---
-*Original Brain Workshop by Paul Hoskinson.*
+
+## ⚙️ Advanced Configuration
+
+The game creates a configuration file at `~/.brainworkshop/data/config.ini`. You can edit this file to tweak advanced settings that aren't available in the in-game menus.
+
+**Example `config.ini` tweaks:**
+```ini
+[DEFAULT]
+# Enable full screen mode
+WINDOW_FULLSCREEN = True
+
+# Change background color (True = Black, False = White)
+BLACK_BACKGROUND = True
+
+# Adjust game speed (seconds per trial)
+TIME_PER_TRIAL = 3.0
+```
+
+---
+
+## 🛠️ Development & Contributing
+
+If you want to contribute or modify the code:
+
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/yourusername/brainworkshop.git
+    ```
+2.  **Set up a virtual environment**:
+    ```bash
+    virtualenv -p /usr/bin/python2 venv
+    source venv/bin/activate
+    pip install pyglet==1.4.10
+    ```
+3.  **Run the game**:
+    ```bash
+    python2 brainworkshop.pyw
+    ```
+
+### Project Structure
+*   `brainworkshop.pyw`: The main entry point and game logic.
+*   `res/`: Contains all assets (images, sounds, music).
+*   `data/`: Stores user statistics and configuration.
+*   `pyglet_old_vendor/`: Patched library files (if applicable).
+
+---
+
+## 📜 License
+
+Brain Workshop is free software licensed under the **GNU General Public License (GPL)**.
+Original concept by **Paul Hoskinson**.
+Modernized fixes by **[Your Name/Handle]**.
+
+---
+
+*Disclaimer: This software is for educational and entertainment purposes. It is not a medical device.*
