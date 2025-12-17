@@ -2,28 +2,68 @@
 #------------------------------------------------------------------------------
 # Brain Workshop: a Dual N-Back game in Python
 #
+# This is a fork of the popular Brain Workshop game. Development on the original
+# has not happened for many years. The fork is available at:
+# https://github.com/brain-workshop/brainworkshop
+#
 # Tutorial, installation instructions & links to the dual n-back community
-# are available at the Brain Workshop web site:
+# are available at the original Brain Workshop web site:
 #
 #       http://brainworkshop.net/
 #
 # Also see Readme.txt.
 #
-# Copyright (C) 2009-2011: Paul Hoskinson (plhosk@gmail.com) 
+# Copyright (C) 2009-2011: Paul Hoskinson (plhosk@gmail.com)
+# Copyright (C) 2017-2018: Samantha McVey (samantham@posteo.net)
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
-# The code is GPL licensed (http://www.gnu.org/copyleft/gpl.html)
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not see https://www.gnu.org/licenses/gpl-2.0.html
 #------------------------------------------------------------------------------
+VERSION = '5.0'
+def debug_msg(msg):
+    if DEBUG:
+        if isinstance(msg, Exception):
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print('debug: %s Line %i' % (str(msg), exc_tb.tb_lineno))
+        else:
+            print('debug: %s' % str(msg))
+def error_msg(msg, e = None):
+    if DEBUG and e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        print("ERROR: %s\n\t%s Line %i" % (msg, e, exc_tb.tb_lineno))
+    else:
+        print("ERROR: %s" % msg)
+def get_argv(arg):
+    if arg in sys.argv:
+        index = sys.argv.index(arg)
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1]
+        else:
+            error_msg("Expected an argument following %s" % arg)
+            exit(1)
 
-VERSION = '4.8.4'
-
-import random, os, sys, imp, socket, urllib2, webbrowser, time, math, ConfigParser, StringIO, traceback, datetime
-import cPickle as pickle
+import random, os, sys, socket, webbrowser, time, math, traceback, datetime, errno
+import urllib.request, configparser as ConfigParser
+from io import StringIO
+import pickle
 from decimal import Decimal
 from time import strftime
 from datetime import date
-
 import gettext
-gettext.install('messages', localedir='res/i18n', unicode=True)
+from pyglet.shapes import Line
+from pyglet.shapes import Polygon
+import pyglet
+
+# TODO check if this is right
+gettext.install('messages', localedir='res/i18n')
 
 # --- Audio Management Fix ---
 active_players = []
@@ -50,8 +90,7 @@ def play_sound_managed(source, position=None, min_distance=None):
 CLINICAL_MODE = False
 
 # Internal static options not available in config file.
-CONFIG_OVERWRITE_IF_OLDER_THAN = '4.8' 
-NOVBO = True
+CONFIG_OVERWRITE_IF_OLDER_THAN = '4.8'
 VSYNC = False
 DEBUG = False
 FOLDER_RES = 'res'
@@ -64,32 +103,73 @@ USER = 'default'
              #10:'chart-10-ponb.txt', 11:'chart-11-aunb.txt'}
 ATTEMPT_TO_SAVE_STATS = True
 STATS_SEPARATOR = ','
-WEB_SITE = 'http://brainworkshop.net/'
-WEB_TUTORIAL = 'http://brainworkshop.net/#tutorial'
+WEB_SITE     = 'http://brainworkshop.net/'
+WEB_TUTORIAL = 'http://brainworkshop.net/tutorial.html'
 CLINICAL_TUTORIAL = WEB_TUTORIAL # FIXME: Add tutorial catered to clinical trials
-WEB_DONATE = 'http://brainworkshop.net/donate.html'
-WEB_VERSION_CHECK = 'http://brainworkshop.net/version.txt'
-WEB_PYGLET_DOWNLOAD = 'http://pyglet.org/download.html'
-WEB_FORUM = 'http://groups.google.com/group/brain-training'
-WEB_MORSE = 'http://en.wikipedia.org/wiki/Morse_code'
-TIMEOUT_SILENT = 3
-TICKS_MIN = 3
-TICKS_MAX = 50
-TICK_DURATION = 0.1
-                                           
+WEB_DONATE          = 'http://brainworkshop.net/donate.html'
+WEB_VERSION_CHECK   = 'http://brainworkshop.net/version.txt'
+WEB_PYGLET_DOWNLOAD = 'http://pyglet.org'
+WEB_FORUM           = 'https://groups.google.com/group/brain-training'
+WEB_MORSE           = 'https://en.wikipedia.org/wiki/Morse_code'
+TIMEOUT_SILENT =  3
+TICKS_MIN      =  3
+TICKS_MAX      = 50
+TICK_DURATION  =  0.1
+DEFAULT_WINDOW_WIDTH  = 912
+DEFAULT_WINDOW_HEIGHT = 684
+preventMusicSkipping  = True
+
+def from_width_center(offset):
+    return int( (window.width/2) + offset * (window.width / DEFAULT_WINDOW_WIDTH) )
+def from_height_center(offset):
+    return int( (window.height/2) + offset * (window.height / DEFAULT_WINDOW_HEIGHT) )
+def width_center():
+    return int(window.width/2)
+def height_center():
+    return int(window.height/2)
+
+def from_top_edge(from_edge):
+    return int(window.height - (from_edge * window.height/DEFAULT_WINDOW_HEIGHT))
+
+def from_bottom_edge(from_edge):
+    return int(from_edge * (window.height/DEFAULT_WINDOW_HEIGHT))
+
+def from_right_edge(from_edge):
+    return int(window.width - (from_edge * window.width/DEFAULT_WINDOW_WIDTH))
+
+def from_left_edge(from_edge):
+    return int(from_edge * window.width/DEFAULT_WINDOW_WIDTH)
+
+def scale_to_width(fraction):
+    return int(fraction * window.width/DEFAULT_WINDOW_WIDTH)
+
+def scale_to_height(fraction):
+    return int(fraction * window.height/DEFAULT_WINDOW_HEIGHT)
+
+def calc_fontsize(size):
+    return size * (window.height/DEFAULT_WINDOW_HEIGHT)
+def calc_dpi(size = 100):
+    return int(size * ((window.width + window.height)/(DEFAULT_WINDOW_WIDTH + DEFAULT_WINDOW_HEIGHT)))
+
+def get_pyglet_media_Player():
+    try:
+        my_player = pyglet.media.Player()
+    except Exception as e:
+        debug_msg(e)
+        my_player = pyglet.media.ManagedSoundPlayer()
+    return my_player
+
 # some functions to assist in path determination
 def main_is_frozen():
-    return (hasattr(sys, "frozen") or # new py2exe
-        hasattr(sys, "importers") # old py2exe
-        or imp.is_frozen("__main__")) # tools/freeze
+    return hasattr(sys, "frozen") # py2exe
 def get_main_dir():
     if main_is_frozen():
         return os.path.dirname(sys.executable)
-    return sys.path[0]    
+    return sys.path[0]
 
 def get_settings_path(name):
     '''Get a directory to save user preferences.
-    Copied from pyglet.resource so we don't have to load that module 
+    Copied from pyglet.resource so we don't have to load that module
     (which recursively indexes . on loading -- wtf?).'''
     if sys.platform in ('cygwin', 'win32'):
         if 'APPDATA' in os.environ:
@@ -101,17 +181,17 @@ def get_settings_path(name):
     else: # on *nix, we want it to be lowercase and without spaces (~/.brainworkshop/data)
         return os.path.expanduser('~/.%s' % (name.lower().replace(' ', '')))
 
-def get_old_data_dir():
-    return os.path.join(get_main_dir(), FOLDER_DATA)
 def get_data_dir():
-    try:
-        return sys.argv[sys.argv.index('--datadir') + 1]
-    except:
+    rtrn = get_argv('--datadir')
+    if rtrn:
+        return rtrn
+    else:
         return os.path.join(get_settings_path('Brain Workshop'), FOLDER_DATA)
 def get_res_dir():
-    try:
-        return sys.argv[sys.argv.index('--resdir') + 1]
-    except:
+    rtrn = get_argv('--resdir')
+    if rtrn:
+        return rtrn
+    else:
         return os.path.join(get_main_dir(), FOLDER_RES)
 def edit_config_ini():
     if sys.platform == 'win32':
@@ -120,25 +200,28 @@ def edit_config_ini():
         cmd = 'open'
     else:
         cmd = 'xdg-open'
-    print (cmd + ' "' + os.path.join(get_data_dir(), CONFIGFILE) + '"')
+    print(cmd + ' "' + os.path.join(get_data_dir(), CONFIGFILE) + '"')
     window.on_close()
     import subprocess
     subprocess.call((cmd + ' "' + os.path.join(get_data_dir(), CONFIGFILE) + '"'), shell=True)
     sys.exit(0)
 
 def quit_with_error(message='', postmessage='', quit=True, trace=True):
-    if message:     print(message + '\n', file=sys.stderr)
-    if trace:       
-        print(_("Full text of error:\n"), file=sys.stderr)
+    if message:
+        sys.stderr.write(message + '\n')
+    if trace:
+        sys.stderr.write(_("Full text of error:\n"))
         traceback.print_exc()
-    if postmessage: print('\n\n' + postmessage, file=sys.stderr)
-    if quit:        sys.exit(1)
+    if postmessage:
+        sys.stderr.write('\n\n' + postmessage)
+    if quit:
+        sys.exit(1)
 
 CONFIGFILE_DEFAULT_CONTENTS = """
 ######################################################################
 # Brain Workshop configuration file
 # generated by Brain Workshop """ + VERSION + """
-# 
+#
 # To change configuration options:
 #   1. Edit this file as desired,
 #   2. Save the file,
@@ -154,13 +237,13 @@ CONFIGFILE_DEFAULT_CONTENTS = """
 
 [DEFAULT]
 
-# Jaeggi-style interface with default scoring model? 
+# Jaeggi-style interface with default scoring model?
 # Choose either this option or JAEGGI_MODE but not both.
 # This mode allows access to Manual mode, the extra sound sets, and the
 # additional game modes of Brain Workshop while presenting the game in
 # the more challenging Jaeggi-style interface featured in the original study.
-# With the default BW sequence generation model, the visual and auditory 
-# sequences are more randomized and unpredictable than they are in Jaeggi 
+# With the default BW sequence generation model, the visual and auditory
+# sequences are more randomized and unpredictable than they are in Jaeggi
 # mode.  The only effect of this option is to set the following options:
 #   ANIMATE_SQUARES = False, OLD_STYLE_SQUARES = True,
 #   OLD_STYLE_SHARP_CORNERS = True, SHOW_FEEDBACK = False,
@@ -175,9 +258,9 @@ JAEGGI_INTERFACE_DEFAULT_SCORING = False
 # It counts non-matches with no inputs as correct (instead of ignoring them).
 # It also forces 4 visual matches, 4 auditory matches, and 2 simultaneous
 # matches per session, resulting in less randomized and more predictable
-# sequences than in the default BW sequence generation model.  
-# Different thresholds are used to reflect the modified scoring system 
-# (see below).  Access to Manual mode, additional game modes and sound sets 
+# sequences than in the default BW sequence generation model.
+# Different thresholds are used to reflect the modified scoring system
+# (see below).  Access to Manual mode, additional game modes and sound sets
 # is disabled in Jaeggi mode.
 # Default: False
 JAEGGI_MODE = False
@@ -185,7 +268,7 @@ JAEGGI_MODE = False
 # The default BW scoring system uses the following formula:
 #     score = TP / (TP + FP + FN)
 # where TP is a true positive response, FN is a false negative, etc.  All
-# stimulus modalities are summed together for this formula.  
+# stimulus modalities are summed together for this formula.
 # The Jaeggi mode scoring system scores uses the following formula:
 #     score = (TP + TN) / (TP + TN + FP + FN)
 # Each modality is scored separately, and the score for the whole session
@@ -201,7 +284,7 @@ JAEGGI_SCORING = False
 #    SHOW_FEEDBACK = False, GRIDLINES = False, CROSSHAIRS = True
 # (note: this option only takes effect if JAEGGI_MODE is set to True)
 # Default: True
-JAEGGI_FORCE_OPTIONS = True 
+JAEGGI_FORCE_OPTIONS = True
 
 # In Jaeggi Mode, further adjust the appearance to match the original
 # software as closely as possible?
@@ -256,12 +339,12 @@ CROSSHAIRS = True
 # Default: [1, 3, 8, 6]
 VISUAL_COLORS = [1, 3, 8, 6]
 
-# Specify image sets here. This is a list of subfolders in the res\sprites\
+# Specify image sets here. This is a list of subfolders in the res/sprites/
 # folder which may be selected in Image mode.
 # The first item in the list is the default which is loaded on startup.
 IMAGE_SETS = ['polygons-basic', 'national-park-service', 'pentominoes',
               'tetrominoes-fixed', 'cartoon-faces']
-            
+
 # This selects which sounds to use for audio n-back tasks.
 # Select any combination of letters, numbers, the NATO Phonetic Alphabet
 # (Alpha, Bravo, Charlie, etc), the C scale on piano, and morse code.
@@ -278,7 +361,7 @@ CHANNEL_AUDIO2 = 'right'
 # In multiple-stimulus modes, more than one visual stimulus is presented at
 # the same time.  Each of the simultaneous visual stimuli has an ID number
 # associated with either its color or its image.  Which should we use, by
-# default?  
+# default?
 # Options: 'color' or 'image'
 MULTI_MODE = 'color'
 
@@ -302,7 +385,7 @@ USE_MUSIC_MANUAL = False
 #  3:'P-C-A',
 #  4:'Dual Combination',
 #  5:'Tri Combination',
-#  6:'Quad Combination', 
+#  6:'Quad Combination',
 #  7:'Arithmetic',
 #  8:'Dual Arithmetic',
 #  9:'Triple Arithmetic',
@@ -340,7 +423,7 @@ GAME_MODE = 2
 # if it doesn't already exist.  Modes not specifically listed here will
 # use BACK_DEFAULT instead.
 #
-# Crab and multi-modes will default to the level associated with the modes 
+# Crab and multi-modes will default to the level associated with the modes
 # they're based on (if it's listed) or to BACK_DEFAULT (if it's not listed).
 
 BACK_DEFAULT = 2
@@ -367,9 +450,9 @@ VARIABLE_NBACK = 0
 # Look above to find the corresponding mode number.  Add a line for the mode
 # if it doesn't already exist.  Modes not specifically listed here will
 # use TICKS_DEFAULT instead.
-# 
-# Crab and multi-modes will default to the ticks associated with the modes 
-# they're based on, *plus an optional bonus*, unless you add a line here to 
+#
+# Crab and multi-modes will default to the ticks associated with the modes
+# they're based on, *plus an optional bonus*, unless you add a line here to
 # give it a specific value.  Any bonuses will be ignored for specified modes.
 TICKS_DEFAULT = 30
 TICKS_4 = 35
@@ -434,12 +517,12 @@ STATSFILE = stats.txt
 ROLLOVER_HOUR = 4
 
 # Version check on startup (http protocol)?
-# Default: True
-VERSION_CHECK_ON_STARTUP = True
+# Default: False
+VERSION_CHECK_ON_STARTUP = False
 
 # The chance that a match will be generated by force, in addition to the
 # inherent 1/8 chance. High settings will cause repetitive sequences to be
-# generated.  Increasing this value will make the n-back task significantly 
+# generated.  Increasing this value will make the n-back task significantly
 # easier if you're using JAGGI_SCORING = False.
 # The value must be a decimal from 0 to 1.
 # Note: this option has no effect in Jaeggi mode.
@@ -447,18 +530,18 @@ VERSION_CHECK_ON_STARTUP = True
 CHANCE_OF_GUARANTEED_MATCH = 0.125
 
 # The chance that a near-miss will be generated to help train resolution of
-# cognitive interference.  For example, in 5-back, a near-miss might be 
-# ABCDE-FGDJK--the "D" comes one trial earlier than would be necessary 
-# for a correct match.  Near-misses can be one trial short of a match, 
+# cognitive interference.  For example, in 5-back, a near-miss might be
+# ABCDE-FGDJK--the "D" comes one trial earlier than would be necessary
+# for a correct match.  Near-misses can be one trial short of a match,
 # one trial late, or N trials late (would have been a match if it was one
-# "cycle" ago).  This setting will never accidentally generate a correct match 
+# "cycle" ago).  This setting will never accidentally generate a correct match
 # in the case of repeating stimuli if it can be avoided.
 # Default:  0.125
 
 DEFAULT_CHANCE_OF_INTERFERENCE = 0.125
 
 # How often should Brain Workshop panhandle for a donation?  After every
-# PANHANDLE_FREQUENCY sessions, Brain Workshop will annoy you slightly by 
+# PANHANDLE_FREQUENCY sessions, Brain Workshop will annoy you slightly by
 # asking for money.  Set this to 0 if you have a clear conscience.
 # Default: 100
 PANHANDLE_FREQUENCY = 100
@@ -477,7 +560,7 @@ ARITHMETIC_ACCEPTABLE_DECIMALS = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.6',
 # Colors for the color n-back task
 # format: (red, green, blue, 255)
 # Note: Changing these colors will have no effect in Dual or
-#   Triple N-Back unless OLD_STYLE_SQUARES is set to True. 
+#   Triple N-Back unless OLD_STYLE_SQUARES is set to True.
 # the _BLK colors are used when BLACK_BACKGROUND is set to True.
 COLOR_1 = (0, 0, 255, 255)
 COLOR_2 = (0, 255, 255, 255)
@@ -509,8 +592,8 @@ SACCADIC_REPETITIONS = 60
 ######################################################################
 # Keyboard definitions.
 # The following keys cannot be used: ESC, X, P, F8, F10.
-# Look up the key codes here:
-# http://pyglet.org/doc/api/pyglet.window.key-module.html
+# You can find the codes using python "from pyglet.window import key; print(key.A)":
+# https://pyglet.readthedocs.io/en/latest/modules/window_key.html#module-pyglet.window.key
 ######################################################################
 
 # Position match. Default: 97 (A)
@@ -527,7 +610,7 @@ KEY_COLOR = 102
 # Image match. Default: 106 (J)
 KEY_IMAGE = 106
 
-# Position match, multiple-stimulus mode.  
+# Position match, multiple-stimulus mode.
 # Defaults:  115 (S), 100 (D), 102 (F)
 KEY_POSITION2 = 115
 KEY_POSITION3 = 100
@@ -567,11 +650,15 @@ class dotdict(dict):
 
 def dump_pyglet_info():
     from pyglet import info
-    sys.stdout = open(os.path.join(get_data_dir(), 'dump.txt'), 'w')
+    oldStdout = sys.stdout
+    pygletDumpPath = os.path.join(get_data_dir(), 'dump.txt')
+    sys.stdout = open(pygletDumpPath, 'w')
     info.dump()
     sys.stdout.close()
+    sys.stdout = oldStdout
+    print("pyglet info dumped to %s" % pygletDumpPath)
     sys.exit()
-    
+
 # parse config file & command line options
 if '--debug' in sys.argv:
     DEBUG = True
@@ -579,25 +666,25 @@ if '--vsync' in sys.argv or sys.platform == 'darwin':
     VSYNC = True
 if '--dump' in sys.argv:
     dump_pyglet_info()
-try: CONFIGFILE = sys.argv[sys.argv.index('--configfile') + 1]
-except: pass
+if get_argv('--configfile'):
+    CONFIGFILE = get_argv('--configfile')
 
 messagequeue = [] # add messages generated during loading here
 class Message:
     def __init__(self, msg):
         if not 'window' in globals():
-            print(msg)                # dump it to console just in case
+            print(msg)               # dump it to console just in case
             messagequeue.append(msg) # but we'll display this later
             return
         self.batch = pyglet.graphics.Batch()
-        self.label = pyglet.text.Label(msg, 
-                            font_name='Times New Roman',
+        self.label = pyglet.text.Label(msg,
+                            font_name=self.fontlist_serif,
                             color=cfg.COLOR_TEXT,
                             batch=self.batch,
                             multiline=True,
                             width=(4*window.width)/5,
-                            font_size=14,
-                            x=window.width//2, y=window.height//2,
+                            font_size=calc_fontsize(14),
+                            x=width_center(), y=height_center(),
                             anchor_x='center', anchor_y='center')
         window.push_handlers(self.on_key_press, self.on_draw)
         self.on_draw()
@@ -606,52 +693,49 @@ class Message:
         if sym:
             self.close()
         return pyglet.event.EVENT_HANDLED
-            
+
     def close(self):
-        return window.remove_handlers(self.on_key_press, self.on_draw)    
-    
+        return window.remove_handlers(self.on_key_press, self.on_draw)
+
     def on_draw(self):
         window.clear()
         self.batch.draw()
         return pyglet.event.EVENT_HANDLED
- 
-def check_and_move_user_data():
-    if not '--datadir' in sys.argv and \
-      (not os.path.exists(get_data_dir()) or len(os.listdir(get_data_dir())) < 1):
-        import shutil
-        shutil.copytree(get_old_data_dir(), get_data_dir())
-        if len(os.listdir(get_old_data_dir())) > 2:
-            Message(
-"""Starting with version 4.8.2, Brain Workshop stores its user profiles \
-(statistics and configuration data) in "%s", rather than the old location, "%s". \
-Your configuration data has been copied to the new location. The files in the \
-old location have not been deleted. If you want to edit your config.ini, \
-make sure you look in "%s".
-
-Press space to continue.""" % (get_data_dir(),  get_old_data_dir(),  get_data_dir()))
 
 def load_last_user(lastuserpath):
-    if os.path.isfile(os.path.join(get_data_dir(), lastuserpath)):
-        f = file(os.path.join(get_data_dir(), lastuserpath), 'r')
-        p = pickle.Unpickler(f)
-        options = p.load()
-        del p
-        f.close()
+    path = os.path.join(get_data_dir(), lastuserpath)
+    if os.path.isfile(path):
+        debug_msg("Trying to load '%s'" % (path))
+        try:
+            f = open(path, 'rb')
+            p = pickle.Unpickler(f)
+            options = p.load()
+            del p
+            f.close()
+        except Exception as e:
+            print("%s\nDue to error, continuing as user 'default'" % e)
+            # Delete the pickle file, since it wasn't able to be loaded.
+            os.remove(path)
+            return
+        if options['USER'] == '':
+            print("Last loaded user is an empty string! Setting it to default instead")
+            options['USER'] = "default"
         if not options['USER'].lower() == 'default':
             global USER
             global STATS_BINARY
             global CONFIGFILE
-            USER = options['USER']
-            CONFIGFILE = USER + '-config.ini'
+            USER         = options['USER']
+            CONFIGFILE   = USER + '-config.ini'
             STATS_BINARY = USER + '-logfile.dat'
 
 def save_last_user(lastuserpath):
     try:
-        f = file(os.path.join(get_data_dir(), lastuserpath), 'w')
+        f = open(os.path.join(get_data_dir(), lastuserpath), 'wb')
         p = pickle.Pickler(f)
         p.dump({'USER': USER})
         # also do date of last session?
-    except:
+    except Exception as e:
+        error_msg("Could not save last user", e)
         pass
 
 def parse_config(configpath):
@@ -659,14 +743,14 @@ def parse_config(configpath):
         fullpath = os.path.join(get_data_dir(), configpath)
         if not os.path.isfile(fullpath):
             rewrite_configfile(configpath, overwrite=False)
-                
+
         # The following is a routine to overwrite older config files with the new one.
         oldconfigfile = open(fullpath, 'r+')
         while oldconfigfile:
             line = oldconfigfile.readline()
             if line == '': # EOF reached. string 'generated by Brain Workshop' not found
                 oldconfigfile.close()
-                rewrite_configfile(configpath, overwrite=True)                
+                rewrite_configfile(configpath, overwrite=True)
                 break
             if line.find('generated by Brain Workshop') > -1:
                 splitline = line.split()
@@ -674,37 +758,38 @@ def parse_config(configpath):
                 if version < CONFIG_OVERWRITE_IF_OLDER_THAN:
                     oldconfigfile.close()
                     os.rename(fullpath, fullpath + '.' + version + '.bak')
-                    rewrite_configfile(configpath, overwrite=True)                
+                    rewrite_configfile(configpath, overwrite=True)
                 break
         oldconfigfile.close()
-        
+
         try:
             config = ConfigParser.ConfigParser()
             config.read(os.path.join(get_data_dir(), configpath))
-        except:
+        except Exception as e:
+            debug_msg(e)
             if configpath != 'config.ini':
                 quit_with_error(_('Unable to load config file: %s') %
                                  os.path.join(get_data_dir(), configpath))
 
-    defaultconfig = ConfigParser.ConfigParser() 
-    defaultconfig.readfp(StringIO.StringIO(CONFIGFILE_DEFAULT_CONTENTS))
+    defaultconfig = ConfigParser.ConfigParser()
+    defaultconfig.read_file(StringIO(CONFIGFILE_DEFAULT_CONTENTS))
 
     def try_eval(text):  # this is a one-use function for config parsing
         try:  return eval(text)
         except: return text
-        
+
     cfg = dotdict()
     if CLINICAL_MODE and CONFIGFILE == 'config.ini': configs = (defaultconfig,)
     else: configs = (defaultconfig, config)
     for config in configs: # load defaultconfig first, in case of incomplete user's config.ini
         config_items = [(k.upper(), try_eval(v)) for k, v in config.items('DEFAULT')]
-        cfg.update(config_items)        
-    
+        cfg.update(config_items)
+
     if not 'CHANCE_OF_INTERFERENCE' in cfg:
         cfg.CHANCE_OF_INTERFERENCE = cfg.DEFAULT_CHANCE_OF_INTERFERENCE
-    try: cfg.STATSFILE = sys.argv[sys.argv.index('--statsfile') + 1]
-    except:
-        pass
+    rtrn = get_argv('--statsfile')
+    if rtrn:
+        cfg.STATSFILE = rtrn
     return cfg
 
 def rewrite_configfile(configfile, overwrite=False):
@@ -716,72 +801,84 @@ def rewrite_configfile(configfile, overwrite=False):
         statsfile = USER + '-stats.txt'
     try:
         os.stat(os.path.join(get_data_dir(), configfile))
-    except OSError:
+    except OSError as e:
+        debug_msg(e)
         overwrite = True
     if overwrite:
-        f = file(os.path.join(get_data_dir(), configfile), 'w')
-        newconfigfile_contents = CONFIGFILE_DEFAULT_CONTENTS.replace('stats.txt', statsfile)
+        f = open(os.path.join(get_data_dir(), configfile), 'w')
+        newconfigfile_contents = CONFIGFILE_DEFAULT_CONTENTS.replace(
+            'stats.txt', statsfile)
         f.write(newconfigfile_contents)
         f.close()
-    STATS_BINARY = statsfile.replace('-stats.txt', '-logfile.dat') # let's hope nobody uses '-stats.txt' in their username
+    # let's hope nobody uses '-stats.txt' in their username
+    STATS_BINARY = statsfile.replace('-stats.txt', '-logfile.dat')
     try:
         os.stat(os.path.join(get_data_dir(), statsfile))
-    except OSError:
-        f = file(os.path.join(get_data_dir(), statsfile), 'w')
+    except OSError as e:
+        debug_msg(e)
+        f = open(os.path.join(get_data_dir(), statsfile), 'w')
         f.close()
     try:
         os.stat(os.path.join(get_data_dir(), STATS_BINARY))
     except OSError:
-        f = file(os.path.join(get_data_dir(), STATS_BINARY), 'w')
+        f = open(os.path.join(get_data_dir(), STATS_BINARY), 'w')
         f.close()
 
-check_and_move_user_data()
+try:
+    path = get_data_dir()
+    os.makedirs(path)
+except OSError as e:
+    if e.errno == errno.EEXIST and os.path.isdir(path):
+        pass
+    else:
+        raise
+
 load_last_user('defaults.ini')
 
 cfg = parse_config(CONFIGFILE)
 
 if CLINICAL_MODE:
     cfg.JAEGGI_INTERFACE_DEFAULT_SCORING = False
-    cfg.JAEGGI_MODE = True
-    cfg.JAEGGI_FORCE_OPTIONS = True
-    cfg.JAEGGI_FORCE_OPTIONS_ADDITIONAL = True
-    cfg.SKIP_TITLE_SCREEN = True
-    cfg.USE_MUSIC = False
+    cfg.JAEGGI_MODE                      = True
+    cfg.JAEGGI_FORCE_OPTIONS             = True
+    cfg.JAEGGI_FORCE_OPTIONS_ADDITIONAL  = True
+    cfg.SKIP_TITLE_SCREEN                = True
+    cfg.USE_MUSIC                        = False
 elif cfg.JAEGGI_INTERFACE_DEFAULT_SCORING:
-    cfg.ANIMATE_SQUARES = False
-    cfg.OLD_STYLE_SQUARES = True
+    cfg.ANIMATE_SQUARES         = False
+    cfg.OLD_STYLE_SQUARES       = True
     cfg.OLD_STYLE_SHARP_CORNERS = True
-    cfg.GRIDLINES = False
-    cfg.CROSSHAIRS = True
-    cfg.SHOW_FEEDBACK = False
-    cfg.BLACK_BACKGROUND = True
-    cfg.WINDOW_FULLSCREEN = True
-    cfg.HIDE_TEXT = True
-    cfg.FIELD_EXPAND = True
-    
+    cfg.GRIDLINES               = False
+    cfg.CROSSHAIRS              = True
+    cfg.SHOW_FEEDBACK           = False
+    cfg.BLACK_BACKGROUND        = True
+    cfg.WINDOW_FULLSCREEN       = True
+    cfg.HIDE_TEXT               = True
+    cfg.FIELD_EXPAND            = True
+
 if cfg.JAEGGI_MODE and not cfg.JAEGGI_INTERFACE_DEFAULT_SCORING:
-    cfg.GAME_MODE = 2
+    cfg.GAME_MODE      = 2
     cfg.VARIABLE_NBACK = 0
     cfg.JAEGGI_SCORING = True
     if cfg.JAEGGI_FORCE_OPTIONS:
         cfg.AUDIO1_SETS = ['letters']
-        cfg.ANIMATE_SQUARES = False
+        cfg.ANIMATE_SQUARES   = False
         cfg.OLD_STYLE_SQUARES = True
         cfg.OLD_STYLE_SHARP_CORNERS = True
-        cfg.GRIDLINES = False
-        cfg.CROSSHAIRS = True
+        cfg.GRIDLINES     = False
+        cfg.CROSSHAIRS    = True
         cfg.SHOW_FEEDBACK = False
         cfg.THRESHOLD_FALLBACK_SESSIONS = 1
-        cfg.NUM_TRIALS_FACTOR = 1
+        cfg.NUM_TRIALS_FACTOR   = 1
         cfg.NUM_TRIALS_EXPONENT = 1
     if cfg.JAEGGI_FORCE_OPTIONS_ADDITIONAL:
-        cfg.BLACK_BACKGROUND = True
+        cfg.BLACK_BACKGROUND  = True
         cfg.WINDOW_FULLSCREEN = True
-        cfg.HIDE_TEXT = True
+        cfg.HIDE_TEXT    = True
         cfg.FIELD_EXPAND = True
 
 if not cfg.USE_SESSION_FEEDBACK:
-    cfg.USE_MUSIC = False
+    cfg.USE_MUSIC    = False
     cfg.USE_APPLAUSE = False
 
 if cfg.BLACK_BACKGROUND:
@@ -802,35 +899,36 @@ def update_check():
     global update_available
     global update_version
     socket.setdefaulttimeout(TIMEOUT_SILENT)
-    req = urllib2.Request(WEB_VERSION_CHECK)
+    req = urllib.request.Request(WEB_VERSION_CHECK)
     try:
-        response = urllib2.urlopen(req)
+        response = urllib.urlopen(req)
         version = response.readline().strip()
-    except:
+    except Exception as e:
+        debug_msg(e)
         return
     if version > VERSION: # simply comparing strings works just fine
         update_available = True
-        update_version = version
+        update_version   = version
 
 if cfg.VERSION_CHECK_ON_STARTUP and not CLINICAL_MODE:
     update_check()
 try:
     # workaround for pyglet.gl.ContextException error on certain video cards.
-    os.environ["PYGLET_SHADOW_WINDOW"]="0"
-    # import pyglet
+    os.environ["PYGLET_SHADOW_WINDOW"] = "0"
     import pyglet
-    from pyglet.gl import *
-    if NOVBO: pyglet.options['graphics_vbo'] = False
     from pyglet.window import key
-except:
+
+    # shapes submodule is available with pyglet >=1.5.4
+    have_shapes = hasattr(pyglet, 'shapes')
+except Exception as e:
+    debug_msg(e)
     quit_with_error(_('Error: unable to load pyglet.  If you already installed pyglet, please ensure ctypes is installed.  Please visit %s') % WEB_PYGLET_DOWNLOAD)
-try:
-    pyglet.options['audio'] = ('directsound', 'openal', 'alsa', )
-    # use in pyglet 1.2: pyglet.options['audio'] = ('directsound', 'pulse', 'openal', )
-    import pyglet.media
-except:
+
+audio_driver = pyglet.media.get_audio_driver()
+debug_msg("Loaded audio driver=" + audio_driver.__class__.__name__)
+if audio_driver.__class__.__name__ == "SilentDriver":
     quit_with_error(_('No suitable audio driver could be loaded.'))
-        
+
 # Initialize resources (sounds and images)
 #
 # --- BEGIN RESOURCE INITIALIZATION SECTION ----------------------------------
@@ -838,11 +936,11 @@ except:
 
 res_path = get_res_dir()
 if not os.access(res_path, os.F_OK):
-    quit_with_error(_('Error: the resource folder\n%s') % res_path + 
+    quit_with_error(_('Error: the resource folder\n%s') % res_path +
                     _(' does not exist or is not readable.  Exiting'), trace=False)
 
-if pyglet.version < '1.1':
-    quit_with_error(_('Error: pyglet 1.1 or greater is required.\n') + 
+if pyglet.version < '2':
+    quit_with_error(_('Error: pyglet >=2 is required.\n') +
                     _('You probably have an older version of pyglet installed.\n') +
                     _('Please visit %s') % WEB_PYGLET_DOWNLOAD, trace=False)
 
@@ -850,52 +948,26 @@ supportedtypes = {'sounds' :['wav'],
                   'music'  :['wav', 'ogg', 'mp3', 'aac', 'mp2', 'ac3', 'm4a'], # what else?
                   'sprites':['png', 'jpg', 'bmp']}
 
-def test_avbin():
+def test_music():
     try:
         import pyglet
-        from pyglet.media import avbin
-        if pyglet.version >= '1.2':  # temporary workaround for defect in pyglet svn 2445
-            pyglet.media.have_avbin = True
-            
-        # On Windows with Data Execution Protection enabled (on by default on Vista),
-        # an exception will be raised when use of avbin is attempted:
-        #   WindowsError: exception: access violation writing [ADDRESS]
-        # The file doesn't need to be in a avbin-specific format, 
-        # since pyglet will use avbin over riff whenever it's detected.
-        # Let's find an audio file and try to load it to see if avbin works.
-        opj = os.path.join
-        opj = os.path.join
-        def look_for_music(path):
-            files = [p for p in os.listdir(path) if not p.startswith('.') and not os.path.isdir(opj(path, p))]
-            for f in files:
-                ext = f.lower()[-3:]
-                if ext in ['wav', 'ogg', 'mp3', 'aac', 'mp2', 'ac3', 'm4a'] and not ext in ('wav'):
-                    return [opj(path, f)]
-            dirs  = [opj(path, p) for p in os.listdir(path) if not p.startswith('.') and os.path.isdir(opj(path, p))]
-            results = []
-            for d in dirs:
-                results.extend(look_for_music(d))
-                if results: return results
-            return results
-        music_file = look_for_music(res_path)
-        if music_file: 
-            # The first time we load a file should trigger the exception
-            music_file = music_file[0]
-            loaded_music = pyglet.media.load(music_file, streaming=False)
-            del loaded_music
-        else:
+        from pyglet.media import have_ffmpeg
+        pyglet.media.have_avbin = have_ffmpeg()
+        if not pyglet.media.have_avbin:
             cfg.USE_MUSIC = False
-        
-    except ImportError:
-        cfg.USE_MUSIC = False
-        if pyglet.version >= '1.2':  
-            pyglet.media.have_avbin = False
-        print(_('AVBin not detected. Music disabled.'))
-        print(_('Download AVBin from: http://code.google.com/p/avbin/'))
 
-    except: # WindowsError
+    except ImportError as e:
+        debug_msg(e)
         cfg.USE_MUSIC = False
-        pyglet.media.have_avbin = False 
+        if pyglet.version >= '1.2':
+            pyglet.media.have_avbin = False
+        print( _('AVBin not detected. Music disabled.'))
+        print( _('Download AVBin from: https://avbin.github.io'))
+
+    except Exception as e: # WindowsError
+        debug_msg(e)
+        cfg.USE_MUSIC = False
+        pyglet.media.have_avbin = False
         if hasattr(pyglet.media, '_source_class'): # pyglet v1.1
             import pyglet.media.riff
             pyglet.media._source_class = pyglet.media.riff.WaveSource
@@ -904,7 +976,7 @@ def test_avbin():
             pyglet.media._source_loader = pyglet.media.RIFFSourceLoader()
         Message("""Warning: Could not load AVbin. Music disabled.
 
-This is usually due to Windows Data Execution Prevention (DEP). Due to a bug in 
+This is usually due to Windows Data Execution Prevention (DEP). Due to a bug in
 AVbin, a library used for decoding sound files, music is not available when \
 DEP is enabled. To enable music, disable DEP for Brain Workshop. To simply get \
 rid of this message, set USE_MUSIC = False in your config.ini file.
@@ -917,11 +989,11 @@ To disable DEP:
 4. Click on the Data Execution Prevention tab
 5. Either select the "Turn on DEP for essential Windows programs and services \
 only" option, or add an exception for Brain Workshop.
-   
+
 Press any key to continue without music support.
 """)
 
-test_avbin()
+test_music()
 if pyglet.media.have_avbin: supportedtypes['sounds'] = supportedtypes['music']
 elif cfg.USE_MUSIC:         supportedtypes['music'] = supportedtypes['sounds']
 else:                       del supportedtypes['music']
@@ -929,7 +1001,7 @@ else:                       del supportedtypes['music']
 supportedtypes['misc'] = supportedtypes['sounds'] + supportedtypes['sprites']
 
 resourcepaths = {}
-for restype in supportedtypes.keys():
+for restype in list(supportedtypes):
     res_sets = {}
     for folder in os.listdir(os.path.join(res_path, restype)):
         contents = []
@@ -942,20 +1014,41 @@ for restype in supportedtypes.keys():
     if res_sets: resourcepaths[restype] = res_sets
 
 sounds = {}
-for k in resourcepaths['sounds'].keys():
+for k in list(resourcepaths['sounds']):
     sounds[k] = {}
     for f in resourcepaths['sounds'][k]:
         sounds[k][os.path.basename(f).split('.')[0]] = pyglet.media.load(f, streaming=False)
 
 sound = sounds['letters'] # is this obsolete yet?
-    
+
 if cfg.USE_APPLAUSE:
     applausesounds = [pyglet.media.load(soundfile, streaming=False)
+
                      for soundfile in resourcepaths['misc']['applause']]
 
-applauseplayer = pyglet.media.Player()
-musicplayer = pyglet.media.Player()
-
+applauseplayer = get_pyglet_media_Player()
+musicplayer    = get_pyglet_media_Player()
+def play_applause():
+    applauseplayer.queue(random.choice(applausesounds))
+    applauseplayer.volume = cfg.SFX_VOLUME
+    if DEBUG: print("Playing applause")
+    applauseplayer.play()
+def play_music(percent):
+    if 'music' in resourcepaths:
+        if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music skipping 1
+        if percent >= get_threshold_advance() and 'advance' in resourcepaths['music']:
+            musicplayer.queue(pyglet.media.load(random.choice(resourcepaths['music']['advance']), streaming = True))
+        elif percent >= (get_threshold_advance() + get_threshold_fallback()) // 2 and 'great' in resourcepaths['music']:
+            musicplayer.queue(pyglet.media.load(random.choice(resourcepaths['music']['great']), streaming = True))
+        elif percent >= get_threshold_fallback() and 'good' in resourcepaths['music']:
+            musicplayer.queue(pyglet.media.load(random.choice(resourcepaths['music']['good']), streaming = True))
+        else:
+            return
+    else:
+        return
+    musicplayer.volume = cfg.MUSIC_VOLUME
+    if DEBUG: print("Playing music")
+    musicplayer.play()
 def sound_stop():
     global applauseplayer
     global musicplayer
@@ -980,13 +1073,13 @@ def fade_out(dt):
 
     if (applauseplayer.volume == 0 and musicplayer.volume == 0) or mode.trial_number == 3:
         pyglet.clock.unschedule(fade_out)
-        
-        
+
+
 #
 # --- END RESOURCE INITIALIZATION SECTION ----------------------------------
 #
-    
-    
+
+
 # The colors of the squares in Triple N-Back mode are defined here.
 # Color 1 is used in Dual N-Back mode.
 def get_color(color):
@@ -1001,7 +1094,7 @@ def default_nback_mode(mode):
         return default_nback_mode(mode % 128)
     else:
         return cfg.BACK_DEFAULT
-        
+
 
 def default_ticks(mode):
     if ('TICKS_%i' % mode) in cfg:
@@ -1029,25 +1122,21 @@ if cfg.WINDOW_FULLSCREEN:
     style = pyglet.window.Window.WINDOW_STYLE_BORDERLESS
 else:
     style = pyglet.window.Window.WINDOW_STYLE_DEFAULT
-     
+
 class MyWindow(pyglet.window.Window):
     def on_key_press(self, symbol, modifiers):
         pass
     def on_key_release(self, symbol, modifiers):
         pass
-    def on_resize(self, width, height):
-        super(MyWindow, self).on_resize(width, height)
-        if 'field' in globals():
-            field.update_layout()
-        if 'Menu' in globals() and Menu.current_menu:
-            Menu.current_menu.update_layout()
-        if 'visuals' in globals():
-            for v in visuals:
-                if hasattr(v, 'update_layout'):
-                    v.update_layout()
+if cfg.WINDOW_FULLSCREEN:
+    screen = pyglet.canvas.get_display().get_default_screen()
+    cfg.WINDOW_WIDTH_FULLSCREEN  = screen.width
+    cfg.WINDOW_HEIGHT_FULLSCREEN = screen.height
+    window = MyWindow(cfg.WINDOW_WIDTH_FULLSCREEN, cfg.WINDOW_HEIGHT_FULLSCREEN, caption=''.join(caption), style=style, vsync=VSYNC, fullscreen=True)
+else:
+    window = MyWindow(cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT, caption=''.join(caption), style=style, vsync=VSYNC)
 
-window = MyWindow(cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT, caption=''.join(caption), style=style, vsync=VSYNC)
-#if DEBUG: 
+#if DEBUG:
 #    window.push_handlers(pyglet.window.event.WindowEventLogger())
 if sys.platform == 'darwin' and cfg.WINDOW_FULLSCREEN:
     window.set_exclusive_keyboard()
@@ -1056,13 +1145,14 @@ if sys.platform == 'linux2':
 
 # set the background color of the window
 if cfg.BLACK_BACKGROUND:
-    glClearColor(0, 0, 0, 1)
+    pyglet.gl.glClearColor(0, 0, 0, 1)
 else:
-    glClearColor(1, 1, 1, 1)
+    pyglet.gl.glClearColor(1, 1, 1, 1)
 if cfg.WINDOW_FULLSCREEN:
     window.maximize()
+    window.set_fullscreen(cfg.WINDOW_FULLSCREEN)
     window.set_mouse_visible(False)
-    
+
 
 # All changeable game state variables are located in an instance of the Mode class
 class Mode:
@@ -1081,7 +1171,7 @@ class Mode:
                                  4:'DC',
                                  5:'TC',
                                  6:'QC',
-                                 7:'A', 
+                                 7:'A',
                                  8:'DA',
                                  9:'TA',
                                  10:'Po',
@@ -1105,12 +1195,12 @@ class Mode:
                                  106:'CIAA',
                                  107:'P'
                                  }
-        
+
         self.long_mode_names =  {2:_('Dual'),
                                  3:_('Position, Color, Sound'),
                                  4:_('Dual Combination'),
                                  5:_('Tri Combination'),
-                                 6:_('Quad Combination'), 
+                                 6:_('Quad Combination'),
                                  7:_('Arithmetic'),
                                  8:_('Dual Arithmetic'),
                                  9:_('Triple Arithmetic'),
@@ -1135,7 +1225,7 @@ class Mode:
                                  106:_('Color, Image, Sound, Sound2'),
                                  107:_('Pentuple')
                                  }
-        
+
         self.modalities = { 2:['position1', 'audio'],
                             3:['position1', 'color', 'audio'],
                             4:['visvis', 'visaudio', 'audiovis', 'audio'],
@@ -1165,11 +1255,11 @@ class Mode:
                             106:['color', 'image', 'audio', 'audio2'],
                             107:['position1', 'color', 'image', 'audio', 'audio2']
                             }
-        
+
         self.flags = {}
-        
+
         # generate crab modes
-        for m in self.short_mode_names.keys():
+        for m in list(self.short_mode_names):
             nm = m | 128                          # newmode; Crab DNB = 2 | 128 = 130
             self.flags[m]  = {'crab':0, 'multi':1, 'selfpaced':0}# forwards
             self.flags[nm] = {'crab':1, 'multi':1, 'selfpaced':0}# every (self.back) stimuli are reversed for matching
@@ -1179,15 +1269,15 @@ class Mode:
             # so we take a copy of the list, in case we want to change it later
 
         # generate multi-stim modes
-        for m in self.short_mode_names.keys():
+        for m in list(self.short_mode_names):
             for n, s in [(2, _('Double-stim')), (3, _('Triple-stim')), (4, _('Quadruple-stim'))]:
                 if set(['color', 'image']).issubset(self.modalities[m]) \
                   or not 'position1' in self.modalities[m] \
-                  or set(['visvis', 'arithmetic']).intersection(self.modalities[m]):  # Combination? AAAH! Scary! 
+                  or set(['visvis', 'arithmetic']).intersection(self.modalities[m]):  # Combination? AAAH! Scary!
                     continue
                 nm = m | 256 * (n-1)               # newmode; 3xDNB = 2 | 512 = 514
                 self.flags[nm] = dict(self.flags[m]) # take a copy
-                self.flags[nm]['multi'] = n          
+                self.flags[nm]['multi'] = n
                 self.short_mode_names[nm] = repr(n) + 'x' + self.short_mode_names[m]
                 self.long_mode_names[nm] = s + ' ' + self.long_mode_names[m]
                 self.modalities[nm] = self.modalities[m][:] # take a copy ([:])
@@ -1199,8 +1289,8 @@ class Mode:
                 for ic in 'image', 'color':
                     if ic in self.modalities[nm]:
                         self.modalities[nm].remove(ic)
-                        
-        for m in self.short_mode_names.keys():
+
+        for m in list(self.short_mode_names):
             nm = m | 1024
             self.short_mode_names[nm] = 'SP-' + self.short_mode_names[m]
             self.long_mode_names[nm] = 'Self-paced ' + self.long_mode_names[m]
@@ -1210,11 +1300,11 @@ class Mode:
 
 
         self.variable_list = []
-        
+
         self.manual = cfg.MANUAL
         if not self.manual:
             self.enforce_standard_mode()
-                    
+
         self.inputs = {'position1': False,
                        'position2': False,
                        'position3': False,
@@ -1225,7 +1315,7 @@ class Mode:
                        'vis2':      False,
                        'vis3':      False,
                        'vis4':      False,
-                       'visvis':    False, 
+                       'visvis':    False,
                        'visaudio':  False,
                        'audiovis':  False,
                        'audio':     False,
@@ -1241,14 +1331,14 @@ class Mode:
                           'vis2':      0.,
                           'vis3':      0.,
                           'vis4':      0.,
-                          'visvis':    0., 
+                          'visvis':    0.,
                           'visaudio':  0.,
                           'audiovis':  0.,
                           'audio':     0.,
                           'audio2':    0.}
-                            
+
         self.hide_text = cfg.HIDE_TEXT
-        
+
         self.current_stim = {'position1': 0,
                              'position2': 0,
                              'position3': 0,
@@ -1256,15 +1346,15 @@ class Mode:
                              'color':     0,
                              'vis':       0, # image or letter for non-multi mode
                              'vis1':      0, # image or color for multi mode
-                             'vis2':      0,                              
-                             'vis3':      0,                              
-                             'vis4':      0,                              
+                             'vis2':      0,
+                             'vis3':      0,
+                             'vis4':      0,
                              'audio':     0,
                              'audio2':    0,
                              'number':    0}
-        
+
         self.current_operation = 'none'
-        
+
         self.started = False
         self.paused = False
         self.show_missed = False
@@ -1276,19 +1366,19 @@ class Mode:
         else:
             self.title_screen = True
         self.shrink_brain = False
-        
+
         self.session_number = 0
         self.trial_number = 0
         self.tick = 0
         self.progress = 0
-        
+
         self.sound_mode = 'none'
         self.sound2_mode = 'none'
         self.soundlist = []
         self.soundlist2 = []
-        
+
         self.bt_sequence = []
-        
+
     def enforce_standard_mode(self):
         self.back = default_nback_mode(self.mode)
         self.ticks_per_trial = default_ticks(self.mode)
@@ -1303,13 +1393,20 @@ class Mode:
         if mode == None: mode = self.mode
         if back == None: back = self.back
         return self.short_mode_names[mode] + str(back) + 'B'
-    
+
 # What follows are the classes which control all the text and graphics.
 #
 # --- BEGIN GRAPHICS SECTION ----------------------------------------------
 #
 
 class Graph:
+    class ShapesStore:
+        def __init__(self):
+            self.s = [] # shapes store
+        def __iadd__(self, o):
+            self.s.append(o)
+            return self
+    
     def __init__(self):
         self.graph = 2
         self.reset_dictionaries()
@@ -1317,7 +1414,9 @@ class Graph:
         self.batch = None
         self.styles = ['N+10/3+4/3', 'N', '%', 'N.%', 'N+2*%-1']
         self.style = 0
-    
+        self.sh = self.ShapesStore()
+
+
     def next_style(self):
         self.style = (self.style + 1) % len(self.styles)
         print("style = %s" % self.styles[self.style]) # fixme:  change the labels
@@ -1325,36 +1424,36 @@ class Graph:
 
     def reset_dictionaries(self):
         self.dictionaries = dict([(i, {}) for i in mode.modalities])
-        
+
     def reset_percents(self):
         self.percents = dict([(k, dict([(i, []) for i in v])) for k,v in mode.modalities.items()])
 
     def next_nonempty_mode(self):
         self.next_mode()
         mode1 = self.graph
-        mode2 = None    # to make sure the loop runs the first iteration    
+        mode2 = None    # to make sure the loop runs the first iteration
         while self.graph != mode2 and not self.dictionaries[self.graph]:
             self.next_mode()
             mode2 = mode1
     def next_mode(self):
-        modes = mode.modalities.keys()
+        modes = list(mode.modalities)
         modes.sort()
         i = modes.index(self.graph)
         i = (i + 1) % len(modes)
         self.graph = modes[i]
         self.batch = None
-        
+
     def parse_stats(self):
         self.batch = None
         self.reset_dictionaries()
         self.reset_percents()
         ind = {'date':0, 'modename':1, 'percent':2, 'mode':3, 'n':4, 'ticks':5,
                'trials':6, 'manual':7, 'session':8, 'position1':9, 'audio':10,
-               'color':11, 'visvis':12, 'audiovis':13, 'arithmetic':14, 
-               'image':15, 'visaudio':16, 'audio2':17, 'position2':18, 
+               'color':11, 'visvis':12, 'audiovis':13, 'arithmetic':14,
+               'image':15, 'visaudio':16, 'audio2':17, 'position2':18,
                'position3':19, 'position4':20, 'vis1':21, 'vis2':22, 'vis3':23,
                'vis4':24}
-                    
+
         if os.path.isfile(os.path.join(get_data_dir(), cfg.STATSFILE)):
             try:
                 statsfile_path = os.path.join(get_data_dir(), cfg.STATSFILE)
@@ -1371,20 +1470,20 @@ class Graph:
                         separator = '\t'
                     else: separator = ','
                     newline = line.split(separator)
-                    try: 
+                    try:
                         if int(newline[7]) != 0: # only consider standard mode
                             continue
                     except:
                         continue
                     newmode = int(newline[3])
                     newback = int(newline[4])
-                    
+
                     while len(newline) < 24:
                         newline.append('0') # make it work for image mode, missing visaudio and audio2
                     if len(newline) >= 16:
                         for m in mode.modalities[newmode]:
                             self.percents[newmode][m].append(int(newline[ind[m]]))
-                        
+
                     dictionary = self.dictionaries[newmode]
                     if datestamp not in dictionary:
                         dictionary[datestamp] = []
@@ -1393,7 +1492,7 @@ class Graph:
 
                 statsfile.close()
             except:
-                quit_with_error(_('Error parsing stats file\n %s') % 
+                quit_with_error(_('Error parsing stats file\n %s') %
                                 os.path.join(get_data_dir(), cfg.STATSFILE),
                                 _('Please fix, delete or rename the stats file.'))
 
@@ -1404,9 +1503,9 @@ class Graph:
                     return 0.
             def cent(x):
                 return map(lambda y: .01*y, x)
-            
+
             for dictionary in self.dictionaries.values():
-                for datestamp in dictionary.keys(): # this would be so much easier with numpy
+                for datestamp in list(dictionary): # this would be so much easier with numpy
                     entries = dictionary[datestamp]
                     if self.styles[self.style] == 'N':
                         scores = [entry[0] for entry in entries]
@@ -1422,23 +1521,23 @@ class Graph:
                         b = -m*flb
                         scores = [entry[0] + b + m*(entry[1]) for entry in entries]
                     dictionary[datestamp] = (mean(scores), max(scores))
-                    
+
             for game in self.percents:
                 for category in self.percents[game]:
                     pcts = self.percents[game][category][-50:]
                     if not pcts:
                         self.percents[game][category].append(0)
                     else:
-                        self.percents[game][category].append(sum(pcts)/len(pcts))                                    
-                        
-    #def export_data(self):       
+                        self.percents[game][category].append(sum(pcts)/len(pcts))
+
+    #def export_data(self):
         #dictionary = {}
         #for x in self.dictionaries: # cycle through game modes
             #chartfile_name = CHARTFILE[x]
             #dictionary = self.dictionaries[x]
             #output = ['Date\t%s N-Back Average\n' % mode.long_mode_names[x]]
-            
-            #keyslist = dictionary.keys()
+
+            #keyslist = list(dictionary)
             #keyslist.sort()
             #if len(keyslist) == 0: continue
             #for datestamp in keyslist:
@@ -1448,18 +1547,18 @@ class Graph:
                 #output.append('\t')
                 #output.append(str(dictionary[datestamp]))
                 #output.append('\n')
-        
+
             #try:
                 #chartfile_path = os.path.join(get_data_dir(), chartfile_name)
                 #chartfile = open(chartfile_path, 'w')
                 #chartfile.write(''.join(output))
                 #chartfile.close()
-                            
+
             #except:
                 #quit_with_error('Error writing chart file:\n%s' %
                                 #os.path.join(get_data_dir(), chartfile_name))
-                
-    
+
+
     def draw(self):
         if not self.batch:
             self.create_batch()
@@ -1468,87 +1567,91 @@ class Graph:
 
     def create_batch(self):
         self.batch = pyglet.graphics.Batch()
-        
+
         linecolor = (0, 0, 255)
         linecolor2 = (255, 0, 0)
         if cfg.BLACK_BACKGROUND:
             axiscolor = (96, 96, 96)
             minorcolor = (64, 64, 64)
-        else: 
+        else:
             axiscolor = (160, 160, 160)
             minorcolor = (224, 224, 224)
-        
-        x_label_width = 20
-        y_marking_interval = 0.25
+        y_marking_interval = 0.25 # This doesn't need scaling
+        x_label_width      = 20   # TODO does this need to be scaled too?
 
         height = int(window.height * 0.625)
         width = int(window.width * 0.625)
-        center_x = window.width // 2
-        center_y = window.height // 2 + 20
-        left = center_x - width // 2
-        right = center_x + width // 2
-        top = center_y + height // 2
+        center_x = width_center()
+        center_y = from_height_center(20)
+        left   = center_x - width  // 2
+        right  = center_x + width  // 2
+        top    = center_y + height // 2
         bottom = center_y - height // 2
         try:
             dictionary = self.dictionaries[self.graph]
-        except: print(self.graph)
+        except:
+            print(self.graph)
         graph_title = mode.long_mode_names[self.graph] + _(' N-Back')
-        
-        self.batch.add(3, GL_LINE_STRIP, 
-            pyglet.graphics.OrderedGroup(order=1), ('v2i', (
-            left, top,
-            left, bottom,
-            right, bottom)), ('c3B', axiscolor * 3))
-        
-        pyglet.text.Label(
+
+        if have_shapes:
+            self.sh += Line(left, top   , left , bottom, color=axiscolor, batch=self.batch)
+            self.sh += Line(left, bottom, right, bottom, color=axiscolor, batch=self.batch)
+        else:
+            self.batch.add(3, pyglet.gl.GL_LINE_STRIP,
+                pyglet.graphics.OrderedGroup(order=1), ('v2i', (
+                left, top,
+                left, bottom,
+                right, bottom)), ('c3B', axiscolor * 3))
+
+        self.sh += pyglet.text.Label(
             _('G: Return to Main Screen\n\nN: Next Game Type'),
             batch=self.batch,
-            multiline = True, width = 300,
-            font_size=9,
+            multiline = True, width = scale_to_width(300),
+            font_size=calc_fontsize(9),
             color=cfg.COLOR_TEXT,
-            x=10, y=window.height - 10,
+            x=from_left_edge(10), y=from_top_edge(10),
             anchor_x='left', anchor_y='top')
 
-        pyglet.text.Label(graph_title,
+        self.sh += pyglet.text.Label(graph_title,
             batch=self.batch,
-            font_size = 18, bold=True, color=cfg.COLOR_TEXT,
-            x = center_x, y = top + 60,
-            anchor_x = 'center', anchor_y = 'center')
-        
-        pyglet.text.Label(_('Date'),
-            batch=self.batch,
-            font_size = 12, bold=True, color=cfg.COLOR_TEXT,
-            x = center_x, y = bottom - 80,
+            font_size=calc_fontsize(18), weight='bold', color=cfg.COLOR_TEXT,
+            x = center_x, y = top + scale_to_height(60),
             anchor_x = 'center', anchor_y = 'center')
 
-        pyglet.text.Label(_('Maximum'), width=1,
+        self.sh += pyglet.text.Label(_('Date'),
             batch=self.batch,
-            font_size = 12, bold=True, color=linecolor2+(255,),
-            x = left - 60, y = center_y + 50,
-            anchor_x = 'right', anchor_y = 'center')
-        
-        pyglet.text.Label(_('Average'), width=1,
+            font_size=calc_fontsize(12), weight='bold', color=cfg.COLOR_TEXT,
+            x = center_x, y = bottom - scale_to_height(80),
+            anchor_x = 'center', anchor_y = 'center')
+
+        self.sh += pyglet.text.Label(_('Maximum'), width=scale_to_width(1),
             batch=self.batch,
-            font_size = 12, bold=True, color=linecolor+(255,),
-            x = left - 60, y = center_y + 25,
+            font_size=calc_fontsize(12), weight='bold', color=linecolor2+(255,),
+            x = left - scale_to_width(60), y = center_y + scale_to_height(50),
             anchor_x = 'right', anchor_y = 'center')
 
-        pyglet.text.Label(_('Score'), width=1,
-        batch=self.batch,
-        font_size = 12, bold=True, color=cfg.COLOR_TEXT,
-        x = left - 60, y = center_y,
-        anchor_x = 'right', anchor_y = 'center')
-                
-        dates = dictionary.keys()
+        self.sh += pyglet.text.Label(_('Average'), width=scale_to_width(1),
+            batch=self.batch,
+            font_size=calc_fontsize(12), weight='bold', color=linecolor+(255,),
+            x = left - scale_to_width(60), y = center_y + scale_to_height(25),
+            anchor_x = 'right', anchor_y = 'center')
+
+        self.sh += pyglet.text.Label(_('Score'), width=scale_to_width(1),
+            batch=self.batch,
+            font_size=calc_fontsize(12), weight='bold', color=cfg.COLOR_TEXT,
+            x = left - scale_to_width(60), y = center_y,
+            anchor_x = 'right', anchor_y = 'center')
+
+        dates = list(dictionary)
         dates.sort()
         if len(dates) < 2:
-            pyglet.text.Label(_('Insufficient data: two days needed'),
+            self.sh += pyglet.text.Label(_('Insufficient data: two days needed'),
                 batch=self.batch,
-                font_size = 12, bold = True, color = axiscolor + (255,),
+                font_size=calc_fontsize(12), weight='bold', color = axiscolor + (255,),
                 x = center_x, y = center_y,
                 anchor_x = 'center', anchor_y = 'center')
             return
-        
+
         ymin = 100000.0
         ymax = 0.0
         for entry in dates:
@@ -1560,16 +1663,16 @@ class Graph:
                 ymax = dictionary[entry][1]
         if ymin == ymax:
             ymin = 0
-        
-        pyglet.clock.tick(poll=True) # Prevent music skipping 1
+
+        if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music skipping 1
 
         ymin = int(math.floor(ymin * 4))/4.
         ymax = int(math.ceil(ymax * 4))/4.
-        
+
         # remove these two lines to revert to the old behaviour
         #ymin = 1.0
         #ymax += 0.25
-        
+
         # add intermediate days
         z = 0
         while z < len(dates) - 1:
@@ -1578,10 +1681,10 @@ class Graph:
                 dates.insert(z+1, newdate)
                 dictionary[newdate] = (-1, -1)
             z += 1
-        
+
         avgpoints = []
         maxpoints = []
-        
+
         xinterval = width / (float(len(dates) - 1))
         skip_x = int(x_label_width // xinterval)
 
@@ -1591,103 +1694,131 @@ class Graph:
                 avgpoints.extend([x, int((dictionary[dates[index]][0] - ymin)/(ymax - ymin) * height + bottom)])
                 maxpoints.extend([x, int((dictionary[dates[index]][1] - ymin)/(ymax - ymin) * height + bottom)])
             datestring = str(dates[index])[2:]
-            datestring = datestring.replace('-', '\n')
+            # If more than 10 dates, don't separate by '-' but by newlines so
+            # they appear vertically rather than 01-01-01
+            if 10 < len(dates):
+                datestring = datestring.replace('-', '\n')
             if not index % (skip_x + 1):
-                pyglet.text.Label(datestring, multiline=True, width=12,
+                self.sh += pyglet.text.Label(datestring, multiline=True, width=scale_to_width(12),
                     batch=self.batch,
-                    font_size=8, bold=False, color=cfg.COLOR_TEXT,
-                    x=x, y=bottom - 15,
+                    font_size=calc_fontsize(8), weight='bold', color=cfg.COLOR_TEXT,
+                    x=x, y=bottom - scale_to_height(15),
                     anchor_x='center', anchor_y='top')
-                self.batch.add(2, GL_LINES, 
-                    pyglet.graphics.OrderedGroup(order=0), ('v2i', (
-                    x, bottom,
-                    x, top)), ('c3B', minorcolor * 2))
-                self.batch.add(2, GL_LINES, 
-                    pyglet.graphics.OrderedGroup(order=1), ('v2i', (
-                    x, bottom - 10,
-                    x, bottom)), ('c3B', axiscolor * 2))
-        
-        pyglet.clock.tick(poll=True) # Prevent music skipping 2
-        
+                if have_shapes:
+                    self.sh += Line(x, bottom                      , x, top   , color=minorcolor, batch=self.batch)
+                    self.sh += Line(x, bottom - scale_to_height(10), x, bottom, color=minorcolor, batch=self.batch)
+                else:
+                    self.batch.add(2, pyglet.gl.GL_LINES,
+                        pyglet.graphics.OrderedGroup(order=0), ('v2i', (
+                        x, bottom,
+                        x, top)), ('c3B', minorcolor * 2))
+                    self.batch.add(2, pyglet.gl.GL_LINES,
+                        pyglet.graphics.OrderedGroup(order=1), ('v2i', (
+                        x, bottom - scale_to_height(10),
+                        x, bottom)), ('c3B', axiscolor * 2))
+
+        if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music skipping 2
+
         y_marking = ymin
         while y_marking <= ymax:
             y = int((y_marking - ymin)/(ymax - ymin) * height + bottom)
-            pyglet.text.Label(str(round(y_marking, 2)),
+            self.sh += pyglet.text.Label(str(round(y_marking, 2)),
                 batch=self.batch,
-                font_size = 10, bold=False, color=cfg.COLOR_TEXT,
-                x = left - 30, y = y + 1,
+                font_size=calc_fontsize(10), weight='normal', color=cfg.COLOR_TEXT,
+                x = left - scale_to_width(30), y = y + scale_to_width(1),
                 anchor_x = 'center', anchor_y = 'center')
-            self.batch.add(2, GL_LINES, 
-                pyglet.graphics.OrderedGroup(order=0), ('v2i', (
-                left, y,
-                right, y)), ('c3B', minorcolor * 2))
-            self.batch.add(2, GL_LINES, 
-                pyglet.graphics.OrderedGroup(order=1), ('v2i', (
-                left - 10, y,
-                left, y)), ('c3B', axiscolor * 2))
+            if have_shapes:
+                self.sh += Line(left                     , y, right, y, color=minorcolor, batch=self.batch)
+                self.sh += Line(left - scale_to_width(10), y, left , y, color=minorcolor, batch=self.batch)
+            else:
+                self.batch.add(2, pyglet.gl.GL_LINES,
+                    pyglet.graphics.OrderedGroup(order=0), ('v2i', (
+                    left, y,
+                    right, y)), ('c3B', minorcolor * 2))
+                self.batch.add(2, pyglet.gl.GL_LINES,
+                    pyglet.graphics.OrderedGroup(order=1), ('v2i', (
+                    left - scale_to_width(10), y,
+                    left, y)), ('c3B', axiscolor * 2))
             y_marking += y_marking_interval
-        
-        self.batch.add(len(avgpoints) // 2, GL_LINE_STRIP, 
-            pyglet.graphics.OrderedGroup(order=2), ('v2i',
-            avgpoints),
-            ('c3B', linecolor * (len(avgpoints) // 2)))
-        self.batch.add(len(maxpoints) // 2, GL_LINE_STRIP, 
-            pyglet.graphics.OrderedGroup(order=3), ('v2i',
-            maxpoints),
-            ('c3B', linecolor2 * (len(maxpoints) // 2)))
-  
-        pyglet.clock.tick(poll=True) # Prevent music skipping 3
 
-        radius = 1
+        if have_shapes:
+            # blue
+            for index in range(0, len(avgpoints)-2, 2):
+                self.sh += Line(avgpoints[index], avgpoints[index + 1], avgpoints[index + 2], avgpoints[index + 3], color=linecolor, batch=self.batch)
+            # red
+            for index in range(0, len(maxpoints)-2, 2):
+                self.sh += Line(maxpoints[index], maxpoints[index + 1], maxpoints[index + 2], maxpoints[index + 3], color=linecolor2, batch=self.batch)
+        else:
+            self.batch.add(len(avgpoints) // 2, pyglet.gl.GL_LINE_STRIP,
+                pyglet.graphics.OrderedGroup(order=2), ('v2i',
+                avgpoints),
+                ('c3B', linecolor * (len(avgpoints) // 2)))
+            self.batch.add(len(maxpoints) // 2, pyglet.gl.GL_LINE_STRIP,
+                pyglet.graphics.OrderedGroup(order=3), ('v2i',
+                maxpoints),
+                ('c3B', linecolor2 * (len(maxpoints) // 2)))
+
+        if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music skipping 3
+
+        radius = scale_to_height(3)
         o = 4
         for index in range(0, len(avgpoints) // 2):
             x = avgpoints[index * 2]
             avg = avgpoints[index * 2 + 1]
-            max = maxpoints[index * 2 + 1]
+            maxp = maxpoints[index * 2 + 1]
             # draw average
-            self.batch.add(4, GL_POLYGON, 
-                pyglet.graphics.OrderedGroup(order=o), ('v2i',
-                (x - radius, avg - radius,
-                 x - radius, avg + radius,
-                 x + radius, avg + radius,
-                 x + radius, avg - radius)),
-                ('c3B', linecolor * 4))
+            if have_shapes:
+                None
+                #self.sh += Polygon((x - radius, avg - radius), (x - radius, avg + radius), (x + radius, avg + radius), (x + radius, avg - radius), color=linecolor, batch=self.batch)
+            else:
+                self.batch.add(4, pyglet.gl.GL_POLYGON,
+                    pyglet.graphics.OrderedGroup(order=o), ('v2i',
+                    (x - radius, avg - radius,
+                    x - radius, avg + radius,
+                    x + radius, avg + radius,
+                    x + radius, avg - radius)),
+                    ('c3B', linecolor * 4))
             o += 1
             # draw maximum
-            self.batch.add(4, GL_POLYGON, 
-                pyglet.graphics.OrderedGroup(order=o), ('v2i',
-                (x - radius, max - radius,
-                 x - radius, max + radius,
-                 x + radius, max + radius,
-                 x + radius, max - radius)),
-                ('c3B', linecolor2 * 4))
+            if have_shapes:
+                None
+                #self.sh += Polygon((x - radius, maxp - radius), (x - radius, maxp + radius), (x + radius, maxp + radius), (x + radius, maxp - radius), color=linecolor, batch=self.batch)
+            else:
+                self.batch.add(4, pyglet.gl.GL_POLYGON,
+                    pyglet.graphics.OrderedGroup(order=o), ('v2i',
+                    (x - radius, maxp - radius,
+                    x - radius, maxp + radius,
+                    x + radius, maxp + radius,
+                    x + radius, maxp - radius)),
+                    ('c3B', linecolor2 * 4))
             o += 1
-        
-        pyglet.clock.tick(poll=True) # Prevent music skipping 4
 
-        labelstrings = {'position1':_('Position: ')  , 'position2':_('Position 2: '), 
+        if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music skipping 4
+
+        labelstrings = {'position1':_('Position: ')  , 'position2':_('Position 2: '),
                         'position3':_('Position 3: '), 'position4':_('Position 4: '),
-                        'vis1':_('Color/Image 1: '), 'vis2':_('Color/Image 2: '), 
+                        'vis1':_('Color/Image 1: '), 'vis2':_('Color/Image 2: '),
                         'vis3':_('Color/Image 3: '), 'vis4':_('Color/Image 4: '),
-                        'visvis':_('Vis & nvis: '), 'visaudio':_('Vis & n-sound: '), 
+                        'visvis':_('Vis & nvis: '), 'visaudio':_('Vis & n-sound: '),
                         'audiovis':_('Sound & n-vis: '), 'audio':_('Sound: '),
                         'color':_('Color: '), 'image':_('Image: '),
-                        'arithmetic':_('Arithmetic: '), 'audio2':_('Sound2: ')}       
+                        'arithmetic':_('Arithmetic: '), 'audio2':_('Sound2: ')}
         str_list = [_('Last 50 rounds:   ')]
         for m in mode.modalities[self.graph]:
             str_list.append(labelstrings[m] + '%i%% ' % self.percents[self.graph][m][-1]
                             + ' ' * (7-len(mode.modalities[self.graph])))
-          
-        pyglet.text.Label(''.join(str_list),
+
+        self.sh += pyglet.text.Label(''.join(str_list),
             batch=self.batch,
-            font_size = 11, bold = False, color = cfg.COLOR_TEXT,
-            x = window.width // 2, y = 20,
+            font_size=calc_fontsize(11), weight='normal', color = cfg.COLOR_TEXT,
+            x = width_center(), y = scale_to_width(20),
             anchor_x = 'center', anchor_y = 'center')
 
 class TextInputScreen:
-    titlesize = 18
-    textsize = 16
-    
+    titlesize = calc_fontsize(18)
+    textsize  = calc_fontsize(16)
+    instance = None
+
     def __init__(self, title='', text='', callback=None, catch=''):
         self.titletext = title
         self.text = text
@@ -1696,14 +1827,14 @@ class TextInputScreen:
         self.textcolor = (255 * int(cfg.BLACK_BACKGROUND), )*3 + (255, )
         self.batch = pyglet.graphics.Batch()
         self.title = pyglet.text.Label(title, font_size=self.titlesize,
-            bold=True, color=self.textcolor, batch=self.batch,
-            x=window.width/2, y=(window.height*9)/10,
+            weight='bold', color=self.textcolor, batch=self.batch,
+            x=width_center(), y=(window.height*9)/10,
             anchor_x='center', anchor_y='center')
         self.document = pyglet.text.document.UnformattedDocument()
         self.document.set_style(0, len(self.document.text), {'color': self.textcolor})
         self.layout = pyglet.text.layout.IncrementalTextLayout(self.document,
-            (window.width/2 - 20 - len(title)*6), (window.height*10)/11, batch=self.batch)
-        self.layout.x = (window.width)/2 + 15 + len(title)*6
+            (from_width_center(-20) - len(title) * calc_fontsize(6)), (window.height*10)/11, batch=self.batch, dpi=calc_dpi())
+        self.layout.x = from_width_center(15) + len(title) * calc_fontsize(6)
         if not callback: callback = lambda x: x
         self.callback = callback
         self.caret = pyglet.text.caret.Caret(self.layout)
@@ -1712,15 +1843,16 @@ class TextInputScreen:
         self.document.text = text
         # workaround for a bug:  the keypress that spawns TextInputScreen doesn't
         # get handled until after the caret handler has been pushed, which seems
-        # to result in the keypress being interpreted as a text input, so we 
+        # to result in the keypress being interpreted as a text input, so we
         # catch that later
         self.catch = catch
-        
-    
+        self.instance = self
+
+
     def on_draw(self):
         # the bugfix hack, which currently does not work
-        if self.catch and self.document.text == self.catch + self.starttext: 
-            self.document.text = self.starttext 
+        if self.catch and self.document.text == self.catch + self.starttext:
+            self.document.text = self.starttext
             self.catch = ''
             self.caret.select_paragraph(600,0)
 
@@ -1728,7 +1860,7 @@ class TextInputScreen:
         self.batch.draw()
         return pyglet.event.EVENT_HANDLED
 
-    
+
     def on_key_press(self, k, mod):
         if k in (key.ESCAPE, key.RETURN, key.ENTER):
             if k is key.ESCAPE:
@@ -1739,7 +1871,92 @@ class TextInputScreen:
             window.pop_handlers()
         self.callback(self.text.strip())
         return pyglet.event.EVENT_HANDLED
-      
+
+class TextInputScreen3():
+    titlesize = calc_fontsize(18)
+    textsize  = calc_fontsize(16)
+    instance = None
+
+    def __init__(self, title='', text='', callback=None, catch=''):
+        self.titletext = title
+        self.input_text = []  # Using list for easier manipulation
+        self.starttext = text
+        self.bgcolor = (255 * int(not cfg.BLACK_BACKGROUND), )*3
+        self.textcolor = (255 * int(cfg.BLACK_BACKGROUND), )*3 + (255, )
+        self.batch = pyglet.graphics.Batch()
+        self.title = pyglet.text.Label(title, font_size=10, #self.titlesize,
+            weight='normal', color=self.textcolor, batch=self.batch,
+            x=int(window.width/2), y=(window.height*8)/10+24,
+            anchor_x='center', anchor_y='center')
+        window.push_handlers(self.on_key_press, self.on_draw, self.on_text)
+        self.callback = callback
+        self.cursor_pos = 0
+        self.cursor_visible = True
+        self.cursor_time = 0
+        self.xInp = 250
+        self.yInp = (window.height*8)/10-18
+        pyglet.clock.schedule_interval(self.update_cursor, 0.5)
+        self.update_displ()
+
+    def on_text(self, text):
+        if text.isprintable() and len(text) == 1:
+            self.input_text.insert(self.cursor_pos, text)
+            self.cursor_pos += 1
+            self.update_displ()
+
+    def on_key_press(self, k, modifiers):
+        if k == key.BACKSPACE:
+            if self.cursor_pos > 0:
+                del self.input_text[self.cursor_pos - 1]
+                self.cursor_pos -= 1
+        elif k == key.LEFT:
+            self.cursor_pos = max(0, self.cursor_pos - 1)
+        elif k == key.RIGHT:
+            self.cursor_pos = min(len(self.input_text), self.cursor_pos + 1)
+        elif  k in (key.ESCAPE, key.RETURN, key.ENTER):
+            if k !=key.ESCAPE:
+                self.callback(''.join(self.input_text))
+            self.cursor_pos = 0
+            self.input_text = []
+            window.pop_handlers()
+        self.update_displ()
+        return pyglet.event.EVENT_HANDLED
+
+    def update_cursor(self, dt):
+        self.cursor_visible = not self.cursor_visible
+        self.update_displ()
+
+    def on_draw(self):
+        #window.clear()
+        self.batch.draw()
+        return pyglet.event.EVENT_HANDLED
+
+    def update_displ(self):
+        
+        # Draw input field background
+        bg = pyglet.shapes.Rectangle(
+            self.xInp, self.yInp, 400, 28,
+            color=(200, 200, 200)
+        )
+        bg.draw()
+        
+        # Create display text with cursor
+        cursor = "_" if self.cursor_visible else " "
+        display_text = (
+            ''.join(self.input_text[:self.cursor_pos]) +
+            cursor +
+            ''.join(self.input_text[self.cursor_pos:])
+        )
+        
+        # Create and draw label
+        label = pyglet.text.Label(
+            display_text,
+            font_size=12, 
+            x=self.xInp+4,
+            y=self.yInp+14,
+            anchor_y='center'
+        )
+        label.draw()
 
 class Cycler:
     def __init__(self, values, default=0):
@@ -1757,7 +1974,7 @@ class Cycler:
         return self.values[self.i]
     def __str__(self):
         return str(self.value())
-    
+
 class PercentCycler(Cycler):
     def __str__(self):
         v = self.value()
@@ -1766,40 +1983,40 @@ class PercentCycler(Cycler):
         else:
             return "%2.1f%%"   % (v*100.)
 
-class Menu(object):
-    current_menu = None
+class Menu:
     """
-    Menu.__init__(self, options, values={}, actions={}, names={}, title='',  choose_once=False, 
+    Menu.__init__(self, options, values={}, actions={}, names={}, title='',  choose_once=False,
                   default=0):
-        
+
     A generic menu class.  The argument options is edited in-place.  Instancing
     the Menu displays the menu.  Menu will install its own event handlers for
-    on_key_press, on_text, on_text_motion and on_draw, all of which 
-    do not pass events to later handlers on the stack.  When the user presses 
+    on_key_press, on_text, on_text_motion and on_draw, all of which
+    do not pass events to later handlers on the stack.  When the user presses
     esc,  Menu pops its handlers off the stack. If the argument actions is used,
     it should be a dict with keys being options with specific actions, and values
     being a python callable which returns the new value for that option.
-    
+
     """
-    titlesize = 18
-    choicesize = 12
-    footnotesize = 10
+    titlesize    = calc_fontsize(18)
+    choicesize   = calc_fontsize(12)
+    footnotesize = calc_fontsize(12)
     fontlist = ['Courier New', # try fixed width fonts first
-                'Monospace', 'Terminal', 'fixed', 'Fixed', 'Times New Roman', 
+                'Monospace', 'Terminal', 'fixed', 'Fixed', 'Times New Roman',
                 'Helvetica', 'Arial']
-            
-    
-    def __init__(self, options, values=None, actions={}, names={}, title='', 
-                 footnote = _('Esc: cancel     Space: modify option     Enter: apply'), 
+    fontlist_serif = ['Times New Roman', 'Serif', 'Helvetica', 'Arial']
+    instance = None
+
+
+    def __init__(self, options, values=None, actions={}, names={}, title='',
+                 footnote = _('Esc: cancel     Space: modify option     Enter: apply'),
                  choose_once=False, default=0):
-        Menu.current_menu = self
         self.bgcolor = (255 * int(not cfg.BLACK_BACKGROUND), )*3
         self.textcolor = (255 * int(cfg.BLACK_BACKGROUND), )*3 + (255,)
         self.markercolors = (0,0,255,0,255,0,255,0,0)#(255 * int(cfg.BLACK_BACKGROUND), )*3*3
         self.pagesize = min(len(options), (window.height*6/10) / (self.choicesize*3/2))
         if type(options) == dict:
             vals = options
-            self.options = options.keys()
+            self.options = list(options)
         else:
             vals = dict([[op, None] for op in options])
             self.options = options
@@ -1810,53 +2027,40 @@ class Menu(object):
                 names[op] = op
         self.names = names
         self.choose_once = choose_once
-        self.disppos = 0 # which item in options is the first on the screen                          
+        self.disppos = 0 # which item in options is the first on the screen
         self.selpos = default # may be offscreen?
         self.batch = pyglet.graphics.Batch()
+
         self.title = pyglet.text.Label(title, font_size=self.titlesize,
-            bold=True, color=self.textcolor, batch=self.batch,
-            x=window.width/2, y=(window.height*9)/10,
+            weight='bold', color=self.textcolor, batch=self.batch,
+            x=width_center(), y=(window.height*9)/10,
             anchor_x='center', anchor_y='center')
         self.footnote = pyglet.text.Label(footnote, font_size=self.footnotesize,
-            bold=True, color=self.textcolor, batch=self.batch,
-            x=window.width/2, y=(window.height*2)/10,
+            weight='bold', color=self.textcolor, batch=self.batch,
+            x=width_center(), y=from_bottom_edge(35),
             anchor_x='center', anchor_y='center')
-        
+
         self.labels = [pyglet.text.Label('', font_size=self.choicesize,
-            bold=True, color=self.textcolor, batch=self.batch,
+            weight='bold', color=self.textcolor, batch=self.batch,
             x=window.width/8, y=(window.height*8)/10 - i*(self.choicesize*3/2),
-            anchor_x='left', anchor_y='center', font_name=self.fontlist) 
+            anchor_x='left', anchor_y='center', font_name=self.fontlist)
                        for i in range(self.pagesize)]
 
-        self.value_labels = [pyglet.text.Label('', font_size=self.choicesize,
-            bold=True, color=self.textcolor, batch=self.batch,
-            x=window.width*0.6, y=(window.height*8)/10 - i*(self.choicesize*3/2),
-            anchor_x='left', anchor_y='center', font_name=self.fontlist) 
-                       for i in range(self.pagesize)]
-        
-        self.marker = self.batch.add(3, GL_TRIANGLES, None, ('v2f', (0,)*6,),
-            ('c3B', self.markercolors))
-            
+        if have_shapes:
+            self.marker = pyglet.shapes.Polygon((0,0), (0,0), (0,0), color=[1] * 3, batch=self.batch)
+        else:
+            self.marker = self.batch.add(3, pyglet.gl.GL_POLYGON, None, ('v2i', (0,)*6,),
+                ('c3B', self.markercolors))
+
         self.update_labels()
 
-        window.push_handlers(self)
+        window.push_handlers(self.on_key_press, self.on_text,
+                             self.on_text_motion, self.on_draw)
 
-    def update_layout(self):
-        self.title.x = window.width//2
-        self.title.y = (window.height*9)//10
-        self.footnote.x = window.width//2
-        self.footnote.y = (window.height*2)//10
-        
-        for i, l in enumerate(self.labels):
-            l.x = window.width//8
-            l.y = (window.height*8)//10 - i*(self.choicesize*3//2)
-            
-        for i, l in enumerate(self.value_labels):
-            l.x = int(window.width*0.6)
-            l.y = (window.height*8)//10 - i*(self.choicesize*3//2)
-            
-        self.update_labels()
-        
+        # keep a reference to the current instance as pyglet>=1.4 Window.push_handlers
+        # only keep weak references to handlers so Menu subclasses will be deleted
+        self.instance = self
+
     def textify(self, x):
         if type(x) == bool:
             return x and _('Yes') or _('No')
@@ -1864,9 +2068,8 @@ class Menu(object):
 
     def update_labels(self):
         for l in self.labels: l.text = 'Hello, bug!'
-        for l in self.value_labels: l.text = ''
-        
-        markerpos = self.selpos - self.disppos                
+
+        markerpos = self.selpos - self.disppos
         i = 0
         di = self.disppos
         if not di == 0: # displacement of i
@@ -1877,20 +2080,28 @@ class Menu(object):
             k = self.options[i+di]
             if k == 'Blank line':
                 self.labels[i].text = ''
-            elif k in self.values.keys() and not self.values[k] == None: 
+            elif k in self.values.keys() and not self.values[k] == None:
                 v = self.values[k]
-                self.labels[i].text = self.names[k] + ":"
-                self.value_labels[i].text = self.textify(v)
+                self.labels[i].text = '%s:%7s' % (self.names[k].ljust(52), self.textify(v))
             else:
                 self.labels[i].text = self.names[k]
             i += 1
         if ending:
             self.labels[i].text = '...'
         w, h, cs = window.width, window.height, self.choicesize
-        self.marker.vertices = [w/10, (h*8)/10 - markerpos*(cs*3/2) + cs/2,
-                                w/9,  (h*8)/10 - markerpos*(cs*3/2),
-                                w/10, (h*8)/10 - markerpos*(cs*3/2) - cs/2]
-        
+        if have_shapes:
+            self.marker = pyglet.shapes.Polygon(
+                (w//10, int((h*8)/10 - markerpos*(cs*3/2) + cs/2)),
+                (w//9,  int((h*8)/10 - markerpos*(cs*3/2))),
+                (w//10, int((h*8)/10 - markerpos*(cs*3/2) - cs/2)),
+                color=(1,1,1), #(255, 55, 0),
+                batch=self.batch
+            )
+        else:
+            self.marker.vertices = [w//10, int((h*8)/10 - markerpos*(cs*3/2) + cs/2),
+                                w//9,  int((h*8)/10 - markerpos*(cs*3/2)),
+                                w//10, int((h*8)/10 - markerpos*(cs*3/2) - cs/2)]
+
     def move_selection(self, steps, relative=True):
         # FIXME:  pageup/pagedown can occasionally cause "Hello bug!" to be displayed
         if relative:
@@ -1903,11 +2114,11 @@ class Menu(object):
         if self.disppos <= self.selpos - self.pagesize +1\
           and not self.disppos == len(self.options) - self.pagesize:
             self.disppos = max(0, min(len(self.options), self.selpos+1) - self.pagesize + 1)
-            
+
         if not self.selpos in (0, len(self.options)-1) and self.options[self.selpos] == 'Blank line':
             self.move_selection(int(steps > 0)*2-1)
         self.update_labels()
-        
+
     def on_key_press(self, sym, mod):
         if sym == key.ESCAPE:
             self.close()
@@ -1917,7 +2128,7 @@ class Menu(object):
         elif sym == key.SPACE:
             self.select()
         return pyglet.event.EVENT_HANDLED
-    
+
     def select(self):
         k = self.options[self.selpos]
         i = self.selpos
@@ -1933,35 +2144,35 @@ class Menu(object):
             self.choose(k, i)
             self.close()
         if self.choose_once:
-            self.close()        
+            self.close()
         self.update_labels()
-        
+
     def choose(self, k, i): # override this method in subclasses
         print("Thank you for beta-testing our software.")
-        
+
     def close(self):
-        Menu.current_menu = None
-        return window.remove_handlers(self)
-        
+        return window.remove_handlers(self.on_key_press, self.on_text,
+                                      self.on_text_motion, self.on_draw)
+
     def save(self):
         "Override me in subclasses."
         return
-    
+
     def on_text_motion(self, evt):
         if evt == key.MOTION_UP:            self.move_selection(steps=-1)
         if evt == key.MOTION_DOWN:          self.move_selection(steps=1)
         if evt == key.MOTION_PREVIOUS_PAGE: self.move_selection(steps=-self.pagesize)
         if evt == key.MOTION_NEXT_PAGE:     self.move_selection(steps=self.pagesize)
         return pyglet.event.EVENT_HANDLED
-    
+
     def on_text(self, evt):
         return pyglet.event.EVENT_HANDLED # todo: entering values after select()
-    
+
     def on_draw(self):
         window.clear()
         self.batch.draw()
         return pyglet.event.EVENT_HANDLED
-    
+
 class MainMenu(Menu):
     def __init__(self):
         def NotImplemented():
@@ -1972,33 +2183,37 @@ class MainMenu(Menu):
                ('user', _('Choose User'), UserScreen),
                ('graph', _('Daily Progress Graph'), NotImplemented),
                ('help', _('Help / Tutorial'), NotImplemented),
-               ('donate', _('Donate'), Notimplemented)
+               ('donate', _('Donate'), Notimplemented),
                ('forum', _('Go to Forum / Mailing List'), NotImplemented)]
         options =       [  op[0]         for op in ops]
         names   = dict( [ (op[0], op[1]) for op in ops])
         actions = dict( [ (op[0], op[2]) for op in ops])
-        
+
 class UserScreen(Menu):
     def __init__(self):
-    
+
         self.users = users = [_("New user"), 'Blank line'] + get_users()
-        Menu.__init__(self, options=users, 
+        Menu.__init__(self, options=users,
                       #actions=dict([(user, choose_user) for user in users]),
                       title=_("Please select your user profile"),
                       choose_once=True,
                       default=users.index(USER))
-    
+
     def save(self):
         self.select() # Enter should choose a user too
         Menu.save(self)
-        
+
     def choose(self, k, i):
         newuser = self.users[i]
         if newuser == _("New user"):
-            textInput = TextInputScreen(_("Enter new user name:"), USER, callback=set_user, catch=' ')
+            # TODO Don't allow the user to create a username that's an empty string
+            if sys.version_info[0] == 2: # python 2
+                textInput = TextInputScreen(_("Enter new user name:"), USER, callback=set_user, catch=' ')
+            else:
+                textInput = TextInputScreen3(_("Enter new user name:"), USER, callback=set_user, catch=' ')
         else:
             set_user(newuser)
-            
+
 class LanguageScreen(Menu):
     def __init__(self):
         self.languages = languages = [fn for fn in os.listdir(os.path.join('res', 'i18n')) if fn.lower().endswith('mo')]
@@ -2011,9 +2226,9 @@ class LanguageScreen(Menu):
                       choose_once=True,
                       default=default)
     def save(self):
-        self.select() 
+        self.select()
         Menu.save(self)
-        
+
     def choose(self, k, i):
         newlang = self.languages[i]
         # set the new language here
@@ -2022,8 +2237,8 @@ class OptionsScreen(Menu):
     def __init__(self):
         """
         Sorta works.  Not yet useful, though.
-        """        
-        options = cfg.keys()
+        """
+        options = list(cfg)
         options.sort()
         Menu.__init__(self, options=options, values=cfg, title=_('Configuration'))
 
@@ -2034,19 +2249,10 @@ class GameSelect(Menu):
         options = modalities[:]
         names = dict([(m, _("Use %s") % m) for m in modalities])
         names['position1'] = _("Use position")
-        options.append("Blank line")
-        options.append('combination')
-        options.append("Blank line")
-        options.append('variable')
-        options.append('crab')      
-        options.append("Blank line")
-        options.append('multi')
-        options.append('multimode')
-        options.append('Blank line')
-        options.append('selfpaced')
-        options.append("Blank line")
-        options.append('interference')
-        names['combination'] = _('Combination N-back mode')  
+        options.extend(["Blank line", 'combination', "Blank line", 'variable',
+            'crab', "Blank line", 'multi', 'multimode', 'Blank line',
+            'selfpaced', "Blank line", 'interference'])
+        names['combination'] = _('Combination N-back mode')
         names['variable'] = _('Use variable N-Back levels')
         names['crab'] = _('Crab-back mode (reverse order of sets of N stimuli)')
         names['multi'] = _('Simultaneous visual stimuli')
@@ -2072,10 +2278,10 @@ class GameSelect(Menu):
         vals['selfpaced'] = bool(mode.flags[mode.mode]['selfpaced'])
         for m in modalities:
             vals[m] = m in curmodes
-        Menu.__init__(self, options, vals, names=names, title=_('Choose your game mode'))        
+        Menu.__init__(self, options, vals, names=names, title=_('Choose your game mode'))
         self.modelabel = pyglet.text.Label('', font_size=self.titlesize,
-            bold=False, color=(0,0,0,255), batch=self.batch,
-            x=window.width/2, y=(window.height*1)/10,
+            weight='normal', color=(0,0,0,255), batch=self.batch,
+            x=width_center(), y=(window.height*1)/10,
             anchor_x='center', anchor_y='center')
         self.update_labels()
         self.newmode = mode.mode # self.newmode will be False if an invalid mode is chosen
@@ -2091,7 +2297,7 @@ class GameSelect(Menu):
         except AttributeError:
             pass
         Menu.update_labels(self)
-        
+
     def calc_mode(self):
         modes = [k for (k, v) in self.values.items() if v and not isinstance(v, Cycler)]
         crab = 'crab' in modes
@@ -2101,25 +2307,25 @@ class GameSelect(Menu):
             modes.extend(['visvis', 'visaudio', 'audiovis']) # audio should already be there
         base = 0
         base += 256 * (self.values['multi'].value()-1)
-        if 'crab' in modes: 
+        if 'crab' in modes:
             modes.remove('crab')
             base += 128
         if 'selfpaced' in modes:
             modes.remove('selfpaced')
             base += 1024
-            
-        candidates = set([k for k,v in mode.modalities.items() if not 
+
+        candidates = set([k for k,v in mode.modalities.items() if not
                          [True for m in modes if not m in v] and not
                          [True for m in v if not m in modes]])
         candidates = candidates & set(range(0, 128))
-        if len(candidates) == 1: 
+        if len(candidates) == 1:
             candidate = list(candidates)[0] + base
             if candidate in mode.modalities:
                 self.newmode = candidate
             else: self.newmode = False
         else:
             if DEBUG: print(candidates, base)
-            self.newmode = False 
+            self.newmode = False
 
     def close(self):
         Menu.close(self)
@@ -2136,31 +2342,31 @@ class GameSelect(Menu):
         cfg.CHANCE_OF_INTERFERENCE = self.values['interference'].value()
         if self.newmode:
             mode.mode = self.newmode
-        
-        
+
+
     def select(self):
         choice = self.options[self.selpos]
         if choice == 'combination':
             self.values['arithmetic'] = False
-            self.values['image'] = False
-            self.values['audio2'] = False
-            self.values['audio'] = True
-            self.values['multi'].i = 0 # no multi mode
+            self.values['image']      = False
+            self.values['audio2']     = False
+            self.values['audio']      = True
+            self.values['multi'].i    = 0 # no multi mode
         elif choice == 'arithmetic':
-            self.values['image'] = False
-            self.values['audio'] = False
-            self.values['audio2'] = False
+            self.values['image']       = False
+            self.values['audio']       = False
+            self.values['audio2']      = False
             self.values['combination'] = False
-            self.values['multi'].i = 0 
+            self.values['multi'].i     = 0
         elif choice == 'audio':
             self.values['arithmetic'] = False
-            if self.values['audio']: 
+            if self.values['audio']:
                 self.values['combination'] = False
-                self.values['audio2'] = False
+                self.values['audio2']      = False
         elif choice == 'audio2':
-            self.values['audio'] = True
+            self.values['audio']       = True
             self.values['combination'] = False
-            self.values['arithmetic'] = False
+            self.values['arithmetic']  = False
         elif choice == 'image':
             self.values['combination'] = False
             self.values['arithmetic'] = False
@@ -2181,23 +2387,23 @@ class GameSelect(Menu):
             self.values[mm] = self.values[notmm]
             self.values[notmm] = False
 
-                            
+
         Menu.select(self)
         modes = [k for k,v in self.values.items() if v]
-        if not [v for k,v in self.values.items() 
+        if not [v for k,v in self.values.items()
                   if v and not k in ('crab', 'combination', 'variable')] \
            or len(modes) == 1 and modes[0] in ['image', 'color']:
             self.values['position1'] = True
             self.update_labels()
         self.calc_mode()
-        
+
 class ImageSelect(Menu):
     def __init__(self):
         imagesets = resourcepaths['sprites']
         self.new_sets = {}
         for image in imagesets:
             self.new_sets[image] = image in cfg.IMAGE_SETS
-        options = self.new_sets.keys()
+        options = list(self.new_sets)
         options.sort()
         vals = self.new_sets
         Menu.__init__(self, options, vals, title=_('Choose images to use for the Image n-back tasks.'))
@@ -2218,8 +2424,8 @@ class ImageSelect(Menu):
                 i = random.randint(1, len(self.options)-1)
             self.values[self.options[i]] = True
             self.update_labels()
-            
-class SoundSelect(Menu):            
+
+class SoundSelect(Menu):
     def __init__(self):
         audiosets = resourcepaths['sounds'] # we don't want to delete 'operations' from resourcepaths['sounds']
         self.new_sets = {}
@@ -2230,9 +2436,9 @@ class SoundSelect(Menu):
         for audio in audiosets:
             if not audio == 'operations':
                 self.new_sets['2'+audio] = audio in cfg.AUDIO2_SETS
-        options = self.new_sets.keys()
+        options = list(self.new_sets)
         options.sort()
-        options.insert(len(self.new_sets)/2, "Blank line") # Menu.update_labels and .select will ignore this
+        options.insert(len(self.new_sets)//2, "Blank line") # Menu.update_labels and .select will ignore this
         options.append("Blank line")
         options.extend(['cfg.CHANNEL_AUDIO1', 'cfg.CHANNEL_AUDIO2'])
         lcr = ['left', 'right', 'center']
@@ -2246,7 +2452,7 @@ class SoundSelect(Menu):
             elif 'CHANNEL_AUDIO' in op:
                 names[op] = 'Channel %i is' % (op[-1]=='2' and 2 or 1)
         Menu.__init__(self, options, vals, {}, names, title=_('Choose sound sets to Sound n-back tasks.'))
-        
+
     def close(self):
         cfg.AUDIO1_SETS = []
         cfg.AUDIO2_SETS = []
@@ -2257,12 +2463,12 @@ class SoundSelect(Menu):
         cfg.CHANNEL_AUDIO2 = self.values['cfg.CHANNEL_AUDIO2'].value()
         Menu.close(self)
         update_all_labels()
-        
+
     def select(self):
         Menu.select(self)
         for c in ('1', '2'):
             if not [v for k,v in self.values.items() if (k.startswith(c) and v and not isinstance(v, Cycler))]:
-                options = resourcepaths['sounds'].keys()
+                options = list(resourcepaths['sounds'])
                 options.remove('operations')
                 i = 0
                 if self.selpos == 0:
@@ -2278,89 +2484,81 @@ class SoundSelect(Menu):
 # the field is the grid on which the squares appear
 class Field:
     def __init__(self):
-        if cfg.BLACK_BACKGROUND:
-            self.color = (64, 64, 64)
-        else: 
-            self.color = (192, 192, 192)
-        self.color4 = self.color * 4
-        self.color8 = self.color * 8
-        
-        self.v_lines = None
-        self.v_crosshair = None
-        self.crosshair_visible = False
-        
-        self.update_layout()
-        
-        # add the inside lines
-        if cfg.GRIDLINES:
-            self.v_lines = batch.add(8, GL_LINES, None, ('v2i', (
-                int(self.x1), int(self.y3),
-                int(self.x2), int(self.y3),
-                int(self.x1), int(self.y4),
-                int(self.x2), int(self.y4),
-                int(self.x3), int(self.y1),
-                int(self.x3), int(self.y2),
-                int(self.x4), int(self.y1),
-                int(self.x4), int(self.y2))),
-                      ('c3B', self.color8))
-                
-        # initialize crosshair
-        self.crosshair_update()
-
-    def update_layout(self):
         if cfg.FIELD_EXPAND:
             self.size = int(window.height * 0.85)
         else: self.size = int(window.height * 0.625)
-        
-        self.center_x = window.width // 2
+        if cfg.BLACK_BACKGROUND:
+            self.color = (64, 64, 64)
+        else:
+            self.color = (192, 192, 192)
+        self.color4 = self.color * 4
+        self.color8 = self.color * 8
+        self.center_x = width_center()
         if cfg.FIELD_EXPAND:
-            self.center_y = window.height // 2
-        else: self.center_y = window.height // 2 + 20
-        self.x1 = self.center_x - self.size/2
-        self.x2 = self.center_x + self.size/2
-        self.x3 = self.center_x - self.size/6
-        self.x4 = self.center_x + self.size/6
-        self.y1 = self.center_y - self.size/2
-        self.y2 = self.center_y + self.size/2
-        self.y3 = self.center_y - self.size/6
-        self.y4 = self.center_y + self.size/6
-        
-        if self.v_lines:
-             self.v_lines.vertices = [
-                int(self.x1), int(self.y3),
-                int(self.x2), int(self.y3),
-                int(self.x1), int(self.y4),
-                int(self.x2), int(self.y4),
-                int(self.x3), int(self.y1),
-                int(self.x3), int(self.y2),
-                int(self.x4), int(self.y1),
-                int(self.x4), int(self.y2)]
-        
-        if self.crosshair_visible and self.v_crosshair:
-             self.v_crosshair.vertices = [
-                    int(self.center_x - 8), int(self.center_y),
-                    int(self.center_x + 8), int(self.center_y),
-                    int(self.center_x), int(self.center_y - 8),
-                    int(self.center_x), int(self.center_y + 8)]
-                
+            self.center_y = height_center()
+        else:
+            self.center_y = from_height_center(20)
+        self.x1 = int(self.center_x - self.size/2)
+        self.x2 = int(self.center_x + self.size/2)
+        self.x3 = int(self.center_x - self.size/6)
+        self.x4 = int(self.center_x + self.size/6)
+        self.y1 = int(self.center_y - self.size/2)
+        self.y2 = int(self.center_y + self.size/2)
+        self.y3 = int(self.center_y - self.size/6)
+        self.y4 = int(self.center_y + self.size/6)
+
+        # add the inside lines
+        if cfg.GRIDLINES:
+            if have_shapes:
+                self.v_lines = [pyglet.shapes.Line(self.x1, self.y3, self.x2, self.y3, color=self.color, batch=batch),
+                                pyglet.shapes.Line(self.x1, self.y4, self.x2, self.y4, color=self.color, batch=batch),
+                                pyglet.shapes.Line(self.x3, self.y1, self.x3, self.y2, color=self.color, batch=batch),
+                                pyglet.shapes.Line(self.x4, self.y1, self.x4, self.y2, color=self.color, batch=batch)]
+            else:
+                self.v_lines = batch.add(8, pyglet.gl.GL_LINES, None, ('v2i', (
+                    self.x1, self.y3,
+                    self.x2, self.y3,
+                    self.x1, self.y4,
+                    self.x2, self.y4,
+                    self.x3, self.y1,
+                    self.x3, self.y2,
+                    self.x4, self.y1,
+                    self.x4, self.y2)),
+                        ('c3B', self.color8))
+
+        self.crosshair_visible = False
+        # initialize crosshair
+        self.crosshair_update()
+
     # draw the target cross in the center
     def crosshair_update(self):
         if not cfg.CROSSHAIRS:
             return
-        if (not mode.paused) and 'position1' in mode.modalities[mode.mode] and not cfg.VARIABLE_NBACK: 
-            if self.crosshair_visible: return
-            else:
-                self.v_crosshair = batch.add(4, GL_LINES, None, ('v2i', (
-                    self.center_x - 8, self.center_y,
-                    self.center_x + 8, self.center_y,
-                    self.center_x, self.center_y - 8,
-                    self.center_x, self.center_y + 8)), ('c3B', self.color4))
+        if (not mode.paused) and 'position1' in mode.modalities[mode.mode] and not cfg.VARIABLE_NBACK:
+            if not self.crosshair_visible:
+                length_of_crosshair = scale_to_height(8)
+                if have_shapes:
+                    self.v_crosshair = [pyglet.shapes.Line(self.center_x - length_of_crosshair, self.center_y,
+                                                           self.center_x + length_of_crosshair, self.center_y,
+                                                           color=self.color, batch=batch),
+                                        pyglet.shapes.Line(self.center_x, self.center_y - length_of_crosshair,
+                                                           self.center_x, self.center_y + length_of_crosshair,
+                                                           color=self.color, batch=batch)]
+                else:
+                    self.v_crosshair = batch.add(4, pyglet.gl.GL_LINES, None, ('v2i', (
+                        self.center_x - length_of_crosshair, self.center_y,
+                        self.center_x + length_of_crosshair, self.center_y,
+                        self.center_x, self.center_y - length_of_crosshair,
+                        self.center_x, self.center_y + length_of_crosshair)), ('c3B', self.color4))
                 self.crosshair_visible = True
         else:
             if self.crosshair_visible:
-                self.v_crosshair.delete()
+                if have_shapes:
+                    for i in range(2):
+                        self.v_crosshair[i].delete()
+                else:
+                    self.v_crosshair.delete()
                 self.crosshair_visible = False
-            else: return
 
 
 # this class controls the visual cues (colored squares).
@@ -2369,21 +2567,17 @@ class Visual:
         self.visible = False
         self.label = pyglet.text.Label(
             '',
-            font_size=field.size//6, bold=True,
+            font_size=field.size//6, weight='bold',
             anchor_x='center', anchor_y='center', batch=batch)
         self.variable_label = pyglet.text.Label(
             '',
-            font_size=field.size//6, bold=True,
+            font_size=field.size//6, weight='bold',
             anchor_x='center', anchor_y='center', batch=batch)
 
         self.spr_square = [pyglet.sprite.Sprite(pyglet.image.load(path))
                               for path in resourcepaths['misc']['colored-squares']]
         self.spr_square_size = self.spr_square[0].width
-        
-    def update_layout(self):
-        self.label.font_size = field.size//6
-        self.variable_label.font_size = field.size//6
-        
+
         if cfg.ANIMATE_SQUARES:
             self.size_factor = 0.9375
         elif cfg.OLD_STYLE_SQUARES:
@@ -2391,52 +2585,38 @@ class Visual:
         else:
             self.size_factor = 1.0
         self.size = int(field.size / 3 * self.size_factor)
-        
-        if hasattr(self, 'position'):
-             position = self.position
-             self.center_x = field.center_x + (field.size / 3)*((position+1)%3 - 1) + (field.size / 3 - self.size)/2
-             self.center_y = field.center_y + (field.size / 3)*((position/3+1)%3 - 1) + (field.size / 3 - self.size)/2
-    
-        if cfg.ANIMATE_SQUARES:
-            self.size_factor = 0.9375
-        elif cfg.OLD_STYLE_SQUARES:
-            self.size_factor = 0.9375
-        else:
-            self.size_factor = 1.0
-        self.size = int(field.size / 3 * self.size_factor)
-        
+
         # load an image set
         self.load_set()
-        
+
     def load_set(self, index=None):
         if type(index) == int:
             index = cfg.IMAGE_SETS[index]
         if index == None:
             index = random.choice(cfg.IMAGE_SETS)
-        if hasattr(self, 'image_set_index') and index == self.image_set_index: 
+        if hasattr(self, 'image_set_index') and index == self.image_set_index:
             return
         self.image_set_index = index
         self.image_set = [pyglet.sprite.Sprite(pyglet.image.load(path))
                             for path in resourcepaths['sprites'][index]]
         self.image_set_size = self.image_set[0].width
-        
+
     def choose_random_images(self, number):
         self.image_indices = random.sample(range(len(self.image_set)), number)
         self.images = random.sample(self.image_set, number)
-    
+
     def choose_indicated_images(self, indices):
         self.image_indices = indices
         self.images = [self.image_set[i] for i in indices]
-        
-    def spawn(self, position=0, color=1, vis=0, number=-1, operation='none', variable = 0):
 
+    def spawn(self, position=0, color=1, vis=0, number=-1, operation='none', variable = 0):
         self.position = position
         self.color = get_color(color)
         self.vis = vis
-        
-        self.center_x = field.center_x + (field.size / 3)*((position+1)%3 - 1) + (field.size / 3 - self.size)/2
-        self.center_y = field.center_y + (field.size / 3)*((position/3+1)%3 - 1) + (field.size / 3 - self.size)/2
-        
+
+        self.center_x = field.center_x + (field.size // 3)*((position+1)%3 - 1) + (field.size // 3 - self.size)//2
+        self.center_y = field.center_y + (field.size // 3)*((position//3+1)%3 - 1) + (field.size // 3 - self.size)//2
+
         if self.vis == 0:
             if cfg.OLD_STYLE_SQUARES:
                 lx = self.center_x - self.size // 2 + 2
@@ -2444,9 +2624,9 @@ class Visual:
                 by = self.center_y - self.size // 2 + 2
                 ty = self.center_y + self.size // 2 - 2
                 cr = self.size // 5
-                
+
                 if cfg.OLD_STYLE_SHARP_CORNERS:
-                    self.square = batch.add(4, GL_POLYGON, None, ('v2i', (
+                    self.square = batch.add(4, pyglet.gl.GL_POLYGON, None, ('v2i', (
                         lx, by,
                         rx, by,
                         rx, ty,
@@ -2458,17 +2638,17 @@ class Visual:
                          [rx - int(cr*(1-math.sin(math.radians(i)))) for i in range(0, 91, 10)] +
                          [rx - int(cr*(1-math.sin(math.radians(i)))) for i in range(90, -1, -10)] +
                          [lx + int(cr*(1-math.cos(math.radians(i)))) for i in range(90, -1, -10)])
-                        
+
                     y = ([by + int(cr*(1-math.sin(math.radians(i)))) for i in range(0, 91, 10) + range(90, -1, -10)] +
                          [ty - int(cr*(1-math.sin(math.radians(i)))) for i in range(0, 91, 10) + range(90, -1, -10)])
                     xy = []
                     for a,b in zip(x,y): xy.extend((a, b))
-                    
-                    self.square = batch.add(40, GL_POLYGON, None, 
+
+                    self.square = batch.add(40, pyglet.gl.GL_POLYGON, None,
                                             ('v2i', xy), ('c4B', self.color * 40))
-                
+
             else:
-                # use sprite squares   
+                # use sprite squares
                 self.square = self.spr_square[color-1]
                 self.square.opacity = 255
                 self.square.x = self.center_x - field.size // 6
@@ -2476,11 +2656,11 @@ class Visual:
                 self.square.scale = 1.0 * self.size / self.spr_square_size
                 self.square_size_scaled = self.square.width
                 self.square.batch = batch
-                
+
                 # initiate square animation
                 self.age = 0.0
                 pyglet.clock.schedule_interval(self.animate_square, 1/60.)
-        
+
         elif 'arithmetic' in mode.modalities[mode.mode]: # display a number
             self.label.text = str(number)
             self.label.x = self.center_x
@@ -2502,12 +2682,12 @@ class Visual:
             self.square.scale = 1.0 * self.size / self.image_set_size
             self.square_size_scaled = self.square.width
             self.square.batch = batch
-            
+
             # initiate square animation
             self.age = 0.0
             #self.animate_square(0)
             pyglet.clock.schedule_interval(self.animate_square, 1/60.)
-            
+
         if variable > 0:
             # display variable n-back level
             self.variable_label.text = str(variable)
@@ -2520,31 +2700,31 @@ class Visual:
                 self.variable_label.y = field.center_y + 4
 
             self.variable_label.color = self.color
-        
+
         self.visible = True
-        
+
     def animate_square(self, dt):
         self.age += dt
         if mode.paused: return
         if not cfg.ANIMATE_SQUARES: return
-        
+
         # factors which affect animation
         scale_addition = dt / 8
         fade_begin_time = 0.4
         fade_end_time = 0.5
         fade_end_transparency = 1.0  # 1 = fully transparent, 0.5 = half transparent
-    
+
         self.square.scale += scale_addition
         dx = (self.square.width - self.square_size_scaled) // 2
         self.square.x = self.center_x - field.size // 6 - dx
         self.square.y = self.center_y - field.size // 6 - dx
-        
+
         if self.age > fade_begin_time:
             factor = (1.0 - fade_end_transparency * (self.age - fade_begin_time) / (fade_end_time - fade_begin_time))
             if factor > 1.0: factor = 1.0
             if factor < 0.0: factor = 0.0
             self.square.opacity = int(255 * factor)
-    
+
     def hide(self):
         if self.visible:
             self.label.text = ''
@@ -2561,14 +2741,14 @@ class Visual:
                     self.square.batch = None
                     pyglet.clock.unschedule(self.animate_square)
             self.visible = False
-            
+
 # Circles is the 3-strikes indicator in the top left corner of the screen.
 class Circles:
     def __init__(self):
-        self.y = window.height - 20
-        self.start_x = 30
-        self.radius = 8
-        self.distance = 20
+        self.y        = from_top_edge(20)
+        self.start_x  = from_left_edge(30)
+        self.radius   = scale_to_width(8)
+        self.distance = scale_to_width(20)
         if cfg.BLACK_BACKGROUND:
             self.not_activated = [64, 64, 64, 255]
         else:
@@ -2578,43 +2758,78 @@ class Circles:
             self.invisible = [0, 0, 0, 0]
         else:
             self.invisible = [255, 255, 255, 0]
-        
+
         self.circle = []
         for index in range(0, cfg.THRESHOLD_FALLBACK_SESSIONS - 1):
-            self.circle.append(batch.add(4, GL_QUADS, None, ('v2i', (
-                self.start_x + self.distance * index - self.radius,
-                self.y + self.radius,
-                self.start_x + self.distance * index + self.radius,
-                self.y + self.radius,
-                self.start_x + self.distance * index + self.radius,
-                self.y - self.radius,
-                self.start_x + self.distance * index - self.radius,
-                self.y - self.radius)),
-                ('c4B', self.not_activated * 4)))
-            
+            if have_shapes:
+                self.circle.append([pyglet.shapes.Rectangle(self.start_x + self.distance * index - self.radius,
+                                                            self.y + self.radius,
+                                                            self.start_x + self.distance * index + self.radius,
+                                                            self.y + self.radius,
+                                                            color=self.not_activated[:3], batch=batch),
+                                    pyglet.shapes.Rectangle(self.start_x + self.distance * index + self.radius,
+                                                            self.y - self.radius,
+                                                            self.start_x + self.distance * index - self.radius,
+                                                            self.y - self.radius,
+                                                            color=self.not_activated[:3], batch=batch)])
+            else:
+                self.circle.append(batch.add(4, pyglet.gl.GL_QUADS, None, ('v2i', (
+                    self.start_x + self.distance * index - self.radius,
+                    self.y + self.radius,
+                    self.start_x + self.distance * index + self.radius,
+                    self.y + self.radius,
+                    self.start_x + self.distance * index + self.radius,
+                    self.y - self.radius,
+                    self.start_x + self.distance * index - self.radius,
+                    self.y - self.radius)),
+                    ('c4B', self.not_activated * 4)))
+
         self.update()
-            
+
     def update(self):
         if mode.manual or mode.started or cfg.JAEGGI_MODE:
             for i in range(0, cfg.THRESHOLD_FALLBACK_SESSIONS - 1):
-                self.circle[i].colors = (self.invisible * 4)
+                if have_shapes:
+                    for j in range(2):
+                        self.circle[i][j].colors = (self.invisible * 4)
+                else:
+                    self.circle[i].colors = (self.invisible * 4)
         else:
             for i in range(0, cfg.THRESHOLD_FALLBACK_SESSIONS - 1):
-                self.circle[i].colors = (self.not_activated * 4)
+                if have_shapes:
+                    for j in range(2):
+                        self.circle[i][j].colors = (self.not_activated * 4)
+                else:
+                    self.circle[i].colors = (self.not_activated * 4)
             for i in range(0, mode.progress):
-                self.circle[i].colors = (self.activated * 4)
-            
-        
+                if have_shapes:
+                    for j in range(2):
+                        self.circle[i][j].colors = (self.activated * 4)
+                else:
+                    self.circle[i].colors = (self.activated * 4)
+
+
 # this is the update notification
 class UpdateLabel:
     def __init__(self):
-        self.label = pyglet.text.Label(
-            '',
-            multiline = True, width = field.size//3 - 4, align='center',
-            font_size=11, bold=True,
-            color=(0, 128, 0, 255),
-            x=window.width//2, y=field.center_x + field.size // 6,
-            anchor_x='center', anchor_y='center', batch=batch)
+        # Some versions don't accept the align argument and some don't accept halign.
+        # So try with one and if that fails use the other.
+        try:
+            self.label = pyglet.text.Label(
+                '',
+                multiline = True, width = field.size//3 - 4, align='middle',
+                font_size=calc_fontsize(11), weight='bold',
+                color=(0, 128, 0, 255),
+                x=width_center(), y=field.center_x + field.size // 6,
+                anchor_x='center', anchor_y='center', batch=batch)
+        except:
+            self.label = pyglet.text.Label(
+                '',
+                multiline = True, width = field.size//3 - 4, halign='middle',
+                font_size=calc_fontsize(11), weight='bold',
+                color=(0, 128, 0, 255),
+                x=width_center(), y=field.center_x + field.size // 6,
+                anchor_x='center', anchor_y='center', batch=batch)
         self.update()
     def update(self):
         if not mode.started and update_available:
@@ -2624,15 +2839,15 @@ class UpdateLabel:
             str_list.append(_('). Press W to open web site'))
             self.label.text = ''.join(str_list)
         else: self.label.text = ''
-        
+
 # this is the black text above the field
 class GameModeLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=16,
+            font_size=calc_fontsize(16),
             color=cfg.COLOR_TEXT,
-            x=window.width//2, y=window.height - 20,
+            x=width_center(), y=from_top_edge(20),
             anchor_x='center', anchor_y='center', batch=batch)
         self.update()
     def update(self):
@@ -2664,9 +2879,9 @@ class JaeggiWarningLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=12, bold = True,
+            font_size=calc_fontsize(12), weight='bold',
             color=(255, 0, 255, 255),
-            x=window.width//2, y=field.center_x + field.size // 3 + 8,
+            x=width_center(), y=field.center_x + field.size // 3 + 8,
             anchor_x='center', anchor_y='center', batch=batch)
 
     def show(self):
@@ -2681,63 +2896,60 @@ class KeysListLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            multiline = True, width = 300, bold = False,
-            font_size=9,
+            multiline = True, width = scale_to_width(300), weight='normal',
+            font_size=calc_fontsize(9),
             color=cfg.COLOR_TEXT,
-            x = 10,
+            x = scale_to_width(10), y = from_top_edge(30),
             anchor_x='left', anchor_y='top', batch=batch)
         self.update()
     def update(self):
         str_list = []
         if mode.started:
-            self.label.y = window.height - 10
+            self.label.y = from_top_edge(30)
             if not mode.hide_text:
                 str_list.append(_('P: Pause / Unpause\n'))
                 str_list.append('\n')
                 str_list.append(_('F8: Hide / Reveal Text\n'))
-                str_list.append('\n')                
+                str_list.append('\n')
                 str_list.append(_('ESC: Cancel Session\n'))
         elif CLINICAL_MODE:
-            self.label.y = window.height - 10
+            self.label.y = from_top_edge(30)
             str_list.append(_('ESC: Exit'))
         else:
             if mode.manual or cfg.JAEGGI_MODE:
-                self.label.y = window.height - 10
+                self.label.y = from_top_edge(30)
             else:
-                self.label.y = window.height - 40
+                self.label.y = from_top_edge(40)
             if 'morse' in cfg.AUDIO1_SETS or 'morse' in cfg.AUDIO2_SETS:
                 str_list.append(_('J: Morse Code Reference\n'))
                 str_list.append('\n')
             str_list.append(_('H: Help / Tutorial\n'))
             str_list.append('\n')
             if mode.manual:
-                str_list.append(_('F1: Decrease N-Back\n'))
-                str_list.append(_('F2: Increase N-Back\n'))
-                str_list.append('\n')
-                str_list.append(_('F3: Decrease Trials\n'))
-                str_list.append(_('F4: Increase Trials\n'))
-                str_list.append('\n')
+                str_list.extend([
+                    _('F1: Decrease N-Back\n'),
+                    _('F2: Increase N-Back\n'), '\n',
+                    _('F3: Decrease Trials\n'),
+                    _('F4: Increase Trials\n'), '\n'])
             if mode.manual:
-                str_list.append(_('F5: Decrease Speed\n'))
-                str_list.append(_('F6: Increase Speed\n'))
-                str_list.append('\n')
-            str_list.append(_('C: Choose Game Type\n'))
-            str_list.append(_('S: Select Sounds\n'))
+                str_list.extend([
+                    _('F5: Decrease Speed\n'),
+                    _('F6: Increase Speed\n'), '\n',
+                    _('C: Choose Game Type\n'),
+                    _('S: Select Sounds\n')])
             str_list.append(_('I: Select Images\n'))
             if mode.manual:
                 str_list.append(_('M: Standard Mode\n'))
             else:
-                str_list.append(_('M: Manual Mode\n'))
-            str_list.append(_('D: Donate\n'))
-            str_list.append('\n')
-            str_list.append(_('G: Daily Progress Graph\n'))
-            str_list.append('\n')
-            str_list.append(_('W: Brain Workshop Web Site\n'))
+                str_list.extend([
+                    _('M: Manual Mode\n'),
+                    _('D: Donate\n'), '\n',
+                    _('G: Daily Progress Graph\n'), '\n',
+                    _('W: Brain Workshop Web Site\n')])
             if cfg.WINDOW_FULLSCREEN:
                 str_list.append(_('E: Saccadic Eye Exercise\n'))
-            str_list.append('\n')
-            str_list.append(_('ESC: Exit\n'))
-            
+            str_list.extend(['\n', _('ESC: Exit\n')])
+
         self.label.text = ''.join(str_list)
 
 class TitleMessageLabel:
@@ -2745,15 +2957,15 @@ class TitleMessageLabel:
         self.label = pyglet.text.Label(
             _('Brain Workshop'),
             #multiline = True, width = window.width // 2,
-            font_size = 32, bold = True, color = cfg.COLOR_TEXT,
-            x = window.width // 2, y = window.height - 35,
+            font_size=calc_fontsize(32), weight='bold', color = cfg.COLOR_TEXT,
+            x = width_center(), y = from_top_edge(25),
             anchor_x = 'center', anchor_y = 'center')
         self.label2 = pyglet.text.Label(
             _('Version ') + str(VERSION),
-            font_size = 14, bold = False, color = cfg.COLOR_TEXT,
-            x = window.width // 2, y = window.height - 75,
+            font_size=calc_fontsize(14), weight='normal', color = cfg.COLOR_TEXT,
+            x = width_center(), y = from_top_edge(55),
             anchor_x = 'center', anchor_y = 'center')
-        
+
     def draw(self):
         self.label.draw()
         self.label2.draw()
@@ -2773,32 +2985,32 @@ class TitleKeysLabel:
             str_list.append(_('D: Donate\n'))
             str_list.append(_('F: Go to Forum / Mailing List\n'))
             str_list.append(_('O: Edit configuration file'))
-        
+
         self.keys = pyglet.text.Label(
             ''.join(str_list),
-            multiline = True, width = 260,
-            font_size = 12, bold = True, color = cfg.COLOR_TEXT,
-            x = window.width // 2, y = 230,
+            multiline = True, width = scale_to_width(260),
+            font_size=calc_fontsize(12), weight='bold', color = cfg.COLOR_TEXT,
+            x = from_width_center(65), y = from_bottom_edge(260),
             anchor_x = 'center', anchor_y = 'top')
-        
+
         self.space = pyglet.text.Label(
             _('Press SPACE to enter the Workshop'),
-            font_size = 20, bold = True, color = (32, 32, 255, 255),
-            x = window.width // 2, y = 35,
+            font_size=calc_fontsize(20), weight='bold', color = (32, 32, 255, 255),
+            x = width_center(), y = from_bottom_edge(35),
             anchor_x = 'center', anchor_y = 'center')
     def draw(self):
         self.space.draw()
         self.keys.draw()
 
-        
+
 # this is the word "brain" above the brain logo.
 class LogoUpperLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             'Brain', # I think we shouldn't translate the program name.  Yes?
-            font_size=11, bold = True,
+            font_size=calc_fontsize(11), weight='bold',
             color=cfg.COLOR_TEXT,
-            x=field.center_x, y=field.center_y + 30,
+            x=field.center_x, y=field.center_y + scale_to_height(30),
             anchor_x='center', anchor_y='center')
     def draw(self):
         self.label.draw()
@@ -2808,9 +3020,9 @@ class LogoLowerLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             'Workshop',
-            font_size=11, bold = True,
+            font_size=calc_fontsize(11), weight='bold',
             color=cfg.COLOR_TEXT,
-            x=field.center_x, y=field.center_y - 27,
+            x=field.center_x, y=field.center_y - scale_to_height(27),
             anchor_x='center', anchor_y='center')
     def draw(self):
         self.label.draw()
@@ -2820,7 +3032,7 @@ class PausedLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=14,
+            font_size=calc_fontsize(14),
             color=(64, 64, 255, 255),
             x=field.center_x, y=field.center_y,
             anchor_x='center', anchor_y='center', batch=batch)
@@ -2836,9 +3048,9 @@ class CongratsLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=14,
+            font_size=calc_fontsize(14),
             color=(255, 32, 32, 255),
-            x=field.center_x, y=window.height - 47,
+            x=field.center_x, y=from_top_edge(47),
             anchor_x='center', anchor_y='center', batch=batch)
         self.update()
     def update(self, show=False, advance=False, fallback=False, awesome=False, great=False, good=False, perfect = False):
@@ -2854,20 +3066,20 @@ class CongratsLabel:
         elif fallback:
             str_list.append(_('N-Back decreased'))
         self.label.text = ''.join(str_list)
-        
+
 class FeedbackLabel:
     def __init__(self, modality, pos=0, total=1):
         """
         Generic text label for giving user feedback during N-back sessions.  All
         of the feedback labels should be instances of this class.
-        
+
         pos should be which label number this one is displayed as (order: left-to-right).
         total should be the total number of feedback labels for this mode.
         """
         self.modality = modality
         self.letter = key.symbol_string(cfg['KEY_%s' % modality.upper()])
-        if self.letter == 'SEMICOLON': 
-            self.letter = ';'      
+        if self.letter == 'SEMICOLON':
+            self.letter = ';'
         modalityname = modality
         if modalityname.endswith('vis'):
             modalityname = modalityname[:-3] + ' & n-vis'
@@ -2875,7 +3087,7 @@ class FeedbackLabel:
             modalityname = modalityname[:-5] + ' & n-audio'
         if mode.flags[mode.mode]['multi'] == 1 and modalityname == 'position1':
             modalityname = 'position'
-            
+
         if total == 2 and not cfg.JAEGGI_MODE and cfg.ENABLE_MOUSE:
             if pos == 0:
                 self.mousetext = "Left-click or"
@@ -2888,14 +3100,14 @@ class FeedbackLabel:
 
         if total < 4:
             self.text += _(' match')
-            font_size = 16
-        elif total < 5: font_size = 14
-        elif total < 6: font_size = 13
-        else:           font_size = 11 
-                
+            font_size=calc_fontsize(16)
+        elif total < 5: font_size=calc_fontsize(14)
+        elif total < 6: font_size=calc_fontsize(13)
+        else:           font_size=calc_fontsize(11)
+
         self.label = pyglet.text.Label(
             text=self.text,
-            x=-200, y=30, # we'll fix this position later, after we see how big the label is
+            x=-200, y=from_bottom_edge(30), # we'll fix the x position later, after we see how big the label is
             anchor_x='left', anchor_y='center', batch=batch, font_size=font_size)
         #w = self.label.width  # this doesn't work; how are you supposed to find the width of a label texture?
         w = (len(self.text) * font_size*4)/5
@@ -2908,7 +3120,7 @@ class FeedbackLabel:
             if cfg.MULTI_MODE == 'color':
                 self.icon = pyglet.sprite.Sprite(visuals[self.id-1].spr_square[cfg.VISUAL_COLORS[self.id-1]-1].image)
                 self.icon.scale = .125 * visuals[self.id-1].size / visuals[self.id-1].image_set_size
-                self.icon.y = 22    
+                self.icon.y = from_bottom_edge(22)
                 self.icon.x = x - 15
                 x += 15
 
@@ -2916,7 +3128,7 @@ class FeedbackLabel:
                 self.icon = pyglet.sprite.Sprite(visuals[self.id-1].images[self.id-1].image)
                 self.icon.color = get_color(1)[:3]
                 self.icon.scale = .25 * visuals[self.id-1].size / visuals[self.id-1].image_set_size
-                self.icon.y = 15
+                self.icon.y = from_bottom_edge(15)
                 self.icon.x = x - 25
                 x += 25
 
@@ -2924,13 +3136,13 @@ class FeedbackLabel:
             self.icon.batch = batch
 
         self.label.x = x
-        
+
         self.update()
-        
+
     def draw(self):
         pass # don't draw twice; this was just for debugging
         #self.label.draw()
-        
+
     def update(self):
         if mode.started and not mode.hide_text and self.modality in mode.modalities[mode.mode]: # still necessary?
             self.label.text = self.text
@@ -2938,7 +3150,7 @@ class FeedbackLabel:
             self.label.text = ''
         if cfg.SHOW_FEEDBACK and mode.inputs[self.modality]:
             result = check_match(self.modality)
-            #self.label.bold = True
+            #self.label.weight='bold'
             if result == 'correct':
                 self.label.color = cfg.COLOR_LABEL_CORRECT
             elif result == 'unknown':
@@ -2949,16 +3161,16 @@ class FeedbackLabel:
             result = check_match(self.modality, check_missed=True)
             if result == 'missed':
                 self.label.color = cfg.COLOR_LABEL_OOPS
-                #self.label.bold = True
+                #self.label.weight='bold'
         else:
             self.label.color = cfg.COLOR_TEXT
-            self.label.bold = False
+            self.label.weight='normal'
 
     def delete(self):
         self.label.delete()
         if mode.flags[mode.mode]['multi'] > 1 and self.modality[-1].isdigit():
             self.icon.batch = None
-        
+
 
 def generate_input_labels():
     labels = []
@@ -2979,7 +3191,7 @@ class ArithmeticAnswerLabel:
         self.decimal = False
         self.label = pyglet.text.Label(
             '',
-            x=window.width/2 - 40, y=30,
+            x=window.width/2 - 40, y=from_bottom_edge(30),
             anchor_x='left', anchor_y='center', batch=batch)
         self.update()
     def update(self):
@@ -2989,25 +3201,25 @@ class ArithmeticAnswerLabel:
         if mode.started and mode.hide_text:
             self.label.text = ''
             return
-        
-        self.label.font_size = 16
+
+        self.label.font_size=calc_fontsize(16)
         str_list = []
         str_list.append(_('Answer: '))
         str_list.append(str(self.parse_answer()))
         self.label.text = ''.join(str_list)
-        
+
         if cfg.SHOW_FEEDBACK and mode.show_missed:
             result = check_match('arithmetic')
             if result == _('correct'):
                 self.label.color = cfg.COLOR_LABEL_CORRECT
-                self.label.bold = True
+                self.label.weight='bold'
             if result == _('incorrect'):
                 self.label.color = cfg.COLOR_LABEL_INCORRECT
-                self.label.bold = True
+                self.label.weight='bold'
         else:
             self.label.color = cfg.COLOR_TEXT
-            self.label.bold = False
-        
+            self.label.weight='normal'
+
     def parse_answer(self):
         chars = ''.join(self.answer)
         if chars == '' or chars == '.':
@@ -3017,7 +3229,7 @@ class ArithmeticAnswerLabel:
         if self.negative:
             result = Decimal('0') - result
         return result
-            
+
     def input(self, input):
         if input == '-':
             if self.negative:
@@ -3030,23 +3242,23 @@ class ArithmeticAnswerLabel:
         else:
             self.answer.append(input)
         self.update()
-    
+
     def reset_input(self):
         self.answer = []
         self.negative = False
         self.decimal = False
         self.update()
-                
+
 
 # this is the text that shows the seconds per trial and the number of trials.
 class SessionInfoLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            multiline = True, width = 128,
-            font_size=11,
+            multiline = True, width = scale_to_width(128),
+            font_size=calc_fontsize(11),
             color=cfg.COLOR_TEXT,
-            x=20, y=field.center_y - 145,
+            x=from_left_edge(20), y=from_bottom_edge(145),
             anchor_x='left', anchor_y='top', batch=batch)
         self.update()
     def update(self):
@@ -3055,16 +3267,16 @@ class SessionInfoLabel:
         else:
             self.label.text = _('Session:\n%1.2f sec/trial\n%i+%i trials\n%i seconds') % \
                               (mode.ticks_per_trial / 10.0, mode.num_trials, \
-                               mode.num_trials_total - mode.num_trials, 
+                               mode.num_trials_total - mode.num_trials,
                                int((mode.ticks_per_trial / 10.0) * \
                                (mode.num_trials_total)))
     def flash(self):
         pyglet.clock.unschedule(sessionInfoLabel.unflash)
-        self.label.bold = True
+        self.label.weight='bold'
         self.update()
         pyglet.clock.schedule_once(sessionInfoLabel.unflash, 1.0)
     def unflash(self, dt):
-        self.label.bold = False
+        self.label.weight='normal'
         self.update()
 # this is the text that shows the seconds per trial and the number of trials.
 
@@ -3072,10 +3284,10 @@ class ThresholdLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            multiline = True, width = 155,
-            font_size=11,
+            multiline = True, width = scale_to_width(128),
+            font_size=calc_fontsize(11),
             color=cfg.COLOR_TEXT,
-            x=window.width - 20, y=field.center_y - 145,
+            x=from_right_edge(20), y=from_bottom_edge(145),
             anchor_x='right', anchor_y='top', batch=batch)
         self.update()
     def update(self):
@@ -3084,54 +3296,54 @@ class ThresholdLabel:
         else:
             self.label.text = _(u'Thresholds:\nRaise level: \u2265 %i%%\nLower level: < %i%%') % \
             (get_threshold_advance(), get_threshold_fallback())   # '\u2265' = '>='
-        
+
 # this controls the "press space to begin session #" text.
 class SpaceLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=16,
-            bold=True,
+            font_size=calc_fontsize(16),
+            weight='bold',
             color=(32, 32, 255, 255),
-            x=window.width//2, y=62,
+            x=width_center(), y=from_bottom_edge(62),
             anchor_x='center', anchor_y='center', batch=batch)
         self.update()
     def update(self):
         if mode.started:
             self.label.text = ''
-        else: 
+        else:
             str_list = []
             str_list.append(_('Press SPACE to begin session #'))
             str_list.append(str(mode.session_number + 1))
             str_list.append(': ')
             str_list.append(mode.long_mode_names[mode.mode] + ' ')
-                
+
             if cfg.VARIABLE_NBACK:
                 str_list.append(_('V. '))
             str_list.append(str(mode.back))
             str_list.append(_('-Back'))
             self.label.text = ''.join(str_list)
-        
+
 def check_match(input_type, check_missed = False):
     current = 0
     back_data = ''
     operation = 0
-    # FIXME:  I'm not going to think about whether crab_back will work with 
+    # FIXME:  I'm not going to think about whether crab_back will work with
     # cfg.VARIABLE_NBACK yet, since I don't actually understand how the latter works
-    
+
     if mode.flags[mode.mode]['crab'] == 1:
         back = 1 + 2*((mode.trial_number-1) % mode.back)
     else:
         back = mode.back
-    
+
     if cfg.VARIABLE_NBACK:
         nback_trial = mode.trial_number - mode.variable_list[mode.trial_number - back - 1] - 1
     else:
         nback_trial = mode.trial_number - back - 1
-        
+
     if len(stats.session['position1']) < mode.back:
         return 'unknown'
-    
+
     if   input_type in ('visvis', 'visaudio', 'image'):
         current = mode.current_stim['vis']
     elif input_type in ('audiovis', ):
@@ -3140,14 +3352,14 @@ def check_match(input_type, check_missed = False):
         back_data = 'vis'
     elif input_type in ('visaudio', ):
         back_data = 'audio'
-    elif input_type is 'arithmetic':
+    elif input_type == 'arithmetic':
         current = mode.current_stim['number']
         back_data = stats.session['numbers'][nback_trial]
         operation = mode.current_operation
     else:
         current = mode.current_stim[input_type]
         back_data = input_type
-            
+
     if input_type == 'arithmetic':
         if operation == 'add':
             correct_answer = back_data + current
@@ -3159,36 +3371,41 @@ def check_match(input_type, check_missed = False):
             correct_answer = Decimal(back_data) / Decimal(current)
         if correct_answer == arithmeticAnswerLabel.parse_answer():
             return 'correct'
-        
-    elif current == stats.session[back_data][nback_trial]:
-        if check_missed:
-            return 'missed'
-        else:
-            return 'correct'
+    else:
+        # Catch accesses past list end
+        try:
+            if current == stats.session[back_data][nback_trial]:
+                if check_missed:
+                    return 'missed'
+                else:
+                    return 'correct'
+        except Exception as e:
+            print(e)
+            return 'incorrect'
     return 'incorrect'
 
-                
+
 # this controls the statistics which display upon completion of a session.
 class AnalysisLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=14,
+            font_size=calc_fontsize(14),
             color=cfg.COLOR_TEXT,
-            x=window.width//2, y=92,
+            x=width_center(), y=from_bottom_edge(92),
             anchor_x='center', anchor_y='center', batch=batch)
         self.update()
-        
+
     def update(self, skip=False):
         if mode.started or mode.session_number == 0 or skip:
             self.label.text = ''
             return
 
-        poss_mods = ['position1', 'position2', 'position3', 'position4', 
-                     'vis1', 'vis2', 'vis3', 'vis4',  'color', 'visvis', 
-                     'visaudio', 'audiovis', 'image', 'audio', 
+        poss_mods = ['position1', 'position2', 'position3', 'position4',
+                     'vis1', 'vis2', 'vis3', 'vis4',  'color', 'visvis',
+                     'visaudio', 'audiovis', 'image', 'audio',
                      'audio2', 'arithmetic'] # arithmetic must be last so it's easy to exclude
-        
+
         rights = dict([(mod, 0) for mod in poss_mods])
         wrongs = dict([(mod, 0) for mod in poss_mods])
         category_percents = dict([(mod, 0) for mod in poss_mods])
@@ -3205,51 +3422,51 @@ class AnalysisLabel:
                     back = mode.back
                 if cfg.VARIABLE_NBACK:
                     back = mode.variable_list[x - back]
-                                
+
                 # data is a dictionary of lists.
-                if mod in ['position1', 'position2', 'position3', 'position4', 
+                if mod in ['position1', 'position2', 'position3', 'position4',
                            'vis1', 'vis2', 'vis3', 'vis4', 'audio', 'audio2', 'color', 'image']:
                     rights[mod] += int((data[mod][x] == data[mod][x-back]) and data[mod+'_input'][x])
                     wrongs[mod] += int((data[mod][x] == data[mod][x-back])  ^  data[mod+'_input'][x]) # ^ is XOR
-                    if cfg.JAEGGI_SCORING: 
+                    if cfg.JAEGGI_SCORING:
                         rights[mod] += int(data[mod][x] != data[mod][x-back]  and not data[mod+'_input'][x])
-                
+
                 if mod in ['visvis', 'visaudio', 'audiovis']:
                     modnow = mod.startswith('vis') and 'vis' or 'audio' # these are the python<2.5 compatible versions
                     modthn = mod.endswith('vis')   and 'vis' or 'audio' # of 'vis' if mod.startswith('vis') else 'audio'
                     rights[mod] += int((data[modnow][x] == data[modthn][x-back]) and data[mod+'_input'][x])
-                    wrongs[mod] += int((data[modnow][x] == data[modthn][x-back])  ^  data[mod+'_input'][x]) 
-                    if cfg.JAEGGI_SCORING: 
+                    wrongs[mod] += int((data[modnow][x] == data[modthn][x-back])  ^  data[mod+'_input'][x])
+                    if cfg.JAEGGI_SCORING:
                         rights[mod] += int(data[modnow][x] != data[modthn][x-back]  and not data[mod+'_input'][x])
-                    
+
                 if mod in ['arithmetic']:
                     ops = {'add':'+', 'subtract':'-', 'multiply':'*', 'divide':'/'}
                     answer = eval("Decimal(data['numbers'][x-back]) %s Decimal(data['numbers'][x])" % ops[data['operation'][x]])
                     rights[mod] += int(answer == Decimal(data[mod+'_input'][x])) # data[...][x] is only Decimal if op == /
-                    wrongs[mod] += int(answer != Decimal(data[mod+'_input'][x])) 
-        
+                    wrongs[mod] += int(answer != Decimal(data[mod+'_input'][x]))
+
         str_list = []
         if not CLINICAL_MODE:
             str_list += [_('Correct-Errors:   ')]
             sep = '   '
             keys = dict([(mod, cfg['KEY_%s' % mod.upper()]) for mod in poss_mods[:-1]]) # exclude 'arithmetic'
-            
+
             for mod in poss_mods[:-1]: # exclude 'arithmetic'
                 if mod in mods:
                     keytext = key.symbol_string(keys[mod])
                     if keytext == 'SEMICOLON': keytext = ';'
                     str_list += ["%s:%i-%i%s" % (keytext, rights[mod], wrongs[mod], sep)]
-    
+
             if 'arithmetic' in mods:
                 str_list += ["%s:%i-%i%s" % (_("Arithmetic"), rights['arithmetic'], wrongs['arithmetic'], sep)]
-             
+
         def calc_percent(r, w):
             if r+w: return int(r*100 / float(r+w))
             else:   return 0
-            
+
         right = sum([rights[mod] for mod in mods])
         wrong = sum([wrongs[mod] for mod in mods])
-        
+
         for mod in mods:
             category_percents[mod] = calc_percent(rights[mod], wrongs[mod])
 
@@ -3261,21 +3478,21 @@ class AnalysisLabel:
         else:
             percent = calc_percent(right, wrong)
             str_list += [_('Score: %i%%') % percent]
-        
+
         self.label.text = ''.join(str_list)
 
         stats.submit_session(percent, category_percents)
-                    
+
 # this controls the title of the session history chart.
 class ChartTitleLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size = 10,
-            bold = True,
+            font_size=calc_fontsize(10),
+            weight='bold',
             color = cfg.COLOR_TEXT,
-            x = window.width - 10,
-            y = window.height - 85,
+            x = from_right_edge(30),
+            y = from_top_edge(85),
             anchor_x = 'right',
             anchor_y = 'top',
             batch = batch)
@@ -3289,14 +3506,14 @@ class ChartTitleLabel:
 # this controls the session history chart.
 class ChartLabel:
     def __init__(self):
-        self.start_x = window.width - 140
-        self.start_y = window.height - 105
-        self.line_spacing = 15
-        self.column_spacing_12 = 30
-        self.column_spacing_23 = 70
-        self.font_size = 10
-        self.color_normal = (128, 128, 128, 255)
-        self.color_advance = (0, 160, 0, 255)
+        self.start_x = from_right_edge(140)
+        self.start_y = from_top_edge(105)
+        self.line_spacing      = calc_fontsize(15)
+        self.column_spacing_12 = calc_fontsize(30)
+        self.column_spacing_23 = calc_fontsize(70)
+        self.font_size         = calc_fontsize(10)
+        self.color_normal   = (128, 128, 128, 255)
+        self.color_advance  = (0, 160, 0, 255)
         self.color_fallback = (160, 0, 0, 255)
         self.column1 = []
         self.column2 = []
@@ -3316,7 +3533,7 @@ class ChartLabel:
                 anchor_x = 'left', anchor_y = 'top', batch=batch))
         stats.parse_statsfile()
         self.update()
-        
+
     def update(self):
         for x in range(0, 20):
             self.column1[x].text = ''
@@ -3342,15 +3559,15 @@ class ChartLabel:
             self.column2[index].text = mode.short_name(mode=stats.history[x][1], back=stats.history[x][2])
             self.column3[index].text = '%i%%' % stats.history[x][3]
             index += 1
-            
+
 # this controls the title of the session history chart.
 class AverageLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=10, bold=False,
+            font_size=calc_fontsize(10), weight='normal',
             color=cfg.COLOR_TEXT,
-            x=window.width - 10, y=window.height-55,
+            x=from_right_edge(30), y=from_top_edge(70),
             anchor_x='right', anchor_y='top', batch=batch)
         self.update()
     def update(self):
@@ -3369,29 +3586,32 @@ class TodayLabel:
     def __init__(self):
         self.labelTitle = pyglet.text.Label(
             '',
-	    font_size = 9,
-	    color = cfg.COLOR_TEXT,
-            x=window.width, y=window.height-5,
-            anchor_x='right', anchor_y='top',width=280, multiline=True, batch=batch)
+            font_size=calc_fontsize(9),
+            color = cfg.COLOR_TEXT,
+            x=window.width, y=from_top_edge(5),
+            anchor_x='right', anchor_y='top',width=scale_to_width(280), multiline=True, batch=batch)
         self.update()
     def update(self):
         if mode.started:
             self.labelTitle.text = ''
         else:
             total_trials = sum([mode.num_trials + mode.num_trials_factor * \
-             his[2] ** mode.num_trials_exponent for his in stats.history])
+                his[2] ** mode.num_trials_exponent for his in stats.history])
             total_time = mode.ticks_per_trial * TICK_DURATION * total_trials
-            
-            self.labelTitle.text = _("%i min %i sec done today in %i sessions\
-			    %i min %i sec done in last 24 hours in %i sessions" % (stats.time_today//60, stats.time_today%60, stats.sessions_today, stats.time_thours//60, stats.time_thours%60, stats.sessions_thours))
+
+            self.labelTitle.text = _(
+                ("%i min %i sec done today in %i sessions\n" \
+               + "%i min %i sec done in last 24 hours in %i sessions") \
+                % (stats.time_today//60, stats.time_today%60, stats.sessions_today, \
+                    stats.time_thours//60, stats.time_thours%60, stats.sessions_thours))
 
 class TrialsRemainingLabel:
     def __init__(self):
         self.label = pyglet.text.Label(
             '',
-            font_size=12, bold = True,
+            font_size=calc_fontsize(12), weight='bold',
             color=cfg.COLOR_TEXT,
-            x=window.width - 10, y=window.height-5,
+            x=from_right_edge(10), y=from_top_edge(5),
             anchor_x='right', anchor_y='top', batch=batch)
         self.update()
     def update(self):
@@ -3399,14 +3619,14 @@ class TrialsRemainingLabel:
             self.label.text = ''
         else:
             self.label.text = _('%i remaining') % (mode.num_trials_total - mode.trial_number)
-           
+
 class Saccadic:
     def __init__(self):
         self.position = 'left'
         self.counter = 0
-        self.radius = 10
+        self.radius = scale_to_height(10)
         self.color = (0, 0, 255, 255)
-    
+
     def tick(self, dt):
         self.counter += 1
         if self.counter == cfg.SACCADIC_REPETITIONS:
@@ -3414,7 +3634,7 @@ class Saccadic:
         elif self.position == 'left':
             self.position = 'right'
         else: self.position = 'left'
-        
+
     def start(self):
         self.position = 'left'
         mode.saccadic = True
@@ -3424,34 +3644,34 @@ class Saccadic:
     def stop(self):
         pyglet.clock.unschedule(saccadic.tick)
         mode.saccadic = False
-        
+
     def draw(self):
-        y = window.height / 2
+        y = height_center()
         if saccadic.position == 'left':
             x = self.radius
         elif saccadic.position == 'right':
             x = window.width - self.radius
-        pyglet.graphics.draw(4, GL_POLYGON, ('v2i', (
+        pyglet.graphics.draw(4, pyglet.gl.GL_POLYGON, ('v2i', (
             x - self.radius, y - self.radius,  # lower-left
             x + self.radius, y - self.radius,  # lower-right
             x + self.radius, y + self.radius,  # upper-right
             x - self.radius, y + self.radius,  # upper-left
-            
+
             )), ('c4B', self.color * 4))
 
-#                    self.square = batch.add(40, GL_POLYGON, None, 
+#                    self.square = batch.add(40, pyglet.gl.GL_POLYGON, None,
 #                                            ('v2i', xy), ('c4B', self.color * 40))
-       
+
 
 class Panhandle:
     def __init__(self, n=-1):
-        paragraphs = [ 
+        paragraphs = [
 _("""
 You have completed %i sessions with Brain Workshop.  Your perseverance suggests \
 that you are finding some benefit from using the program.  If you have been \
 benefiting from Brain Workshop, don't you think Brain Workshop should \
 benefit from you?
-""") % n, 
+""") % n,
 _("""
 Brain Workshop is and always will be 100% free.  Up until now, Brain Workshop \
 as a project has succeeded because a very small number of people have each \
@@ -3467,7 +3687,7 @@ and we would be able to buy advertising to help people learn about Brain \
 Workshop.  With $2 per downloader, or with more downloaders, we could afford \
 to fund controlled experiments and clinical trials on Brain Workshop and \
 cognitive training.  Help us make that vision a reality.  Donate.
-"""),  
+"""),
 _("""
 The authors think it important that access to cognitive training \
 technologies be available to everyone as freely as possible.  Like other \
@@ -3487,7 +3707,7 @@ spent programming than serving coffee, then do something about it.  Donate.
 """),
 _("""
 Press SPACE to continue, or press D to donate now.
-""")]    # feel free to add more paragraphs or to change the chances for the 
+""")]    # feel free to add more paragraphs or to change the chances for the
         # paragraphs you like and dislike, etc.
         chances = [-1, 10, 10, 10, 10, 0] # if < 0, 100% chance of being included.  Otherwise, relative weight.
                                          # if == 0, appended to end and not counted
@@ -3510,16 +3730,15 @@ Press SPACE to continue, or press D to donate now.
             if chances[i] == 0:
                 text.append(i)
         self.text = ''.join([paragraphs[i] for i in text])
-        
+
         self.batch = pyglet.graphics.Batch()
-        self.label = pyglet.text.Label(self.text, 
-                            font_name='Times New Roman',
+        self.label = pyglet.text.Label(self.text,
                             color=cfg.COLOR_TEXT,
                             batch=self.batch,
                             multiline=True,
                             width=(4*window.width)/5,
-                            font_size=14,
-                            x=window.width//2, y=window.height//2,
+                            font_size=calc_fontsize(14),
+                            x=width_center(), y=height_center(),
                             anchor_x='center', anchor_y='center')
         window.push_handlers(self.on_key_press, self.on_draw)
         self.on_draw()
@@ -3530,14 +3749,14 @@ Press SPACE to continue, or press D to donate now.
         elif sym in (key.RETURN, key.ENTER, key.D):
             self.select()
         return pyglet.event.EVENT_HANDLED
-    
+
     def select(self):
         webbrowser.open_new_tab(WEB_DONATE)
         self.close()
-        
+
     def close(self):
-        return window.remove_handlers(self.on_key_press, self.on_draw)    
-    
+        return window.remove_handlers(self.on_key_press, self.on_draw)
+
     def on_draw(self):
         window.clear()
         self.batch.draw()
@@ -3559,7 +3778,7 @@ class Stats:
         self.time_today = 0
         self.time_thours = 0
         self.sessions_thours = 0
-        
+
     def parse_statsfile(self):
         self.clear()
         if os.path.isfile(os.path.join(get_data_dir(), cfg.STATSFILE)):
@@ -3604,7 +3823,8 @@ class Stats:
                     newsession_number = int(newline[8])
                     try:
                         sesstime = int(round(float(newline[25])))
-                    except:
+                    except Exception as e:
+                        debug_msg(e)
                         # this session wasn't performed with this version of BW, and is therefore
                         # old, and therefore the session time doesn't matter
                         sesstime = 0
@@ -3622,13 +3842,14 @@ class Stats:
                     #    last_session = self.full_history[-1]
                 statsfile.close()
                 self.retrieve_progress()
-                
-            except:
+
+            except Exception as e:
+                debug_msg(e)
                 quit_with_error(_('Error parsing stats file\n%s') %
                                 os.path.join(get_data_dir(), cfg.STATSFILE),
                                 _('\nPlease fix, delete or rename the stats file.'),
                                 quit=False)
-    
+
     def retrieve_progress(self):
         if cfg.RESET_LEVEL:
             sessions = [s for s in self.history if s[1] == mode.mode]
@@ -3658,55 +3879,18 @@ class Stats:
 
     def initialize_session(self):
         self.session = {}
-        self.session['position1'] = []
-        self.session['position2'] = []
-        self.session['position3'] = []
-        self.session['position4'] = []
-        self.session['vis1'] = []
-        self.session['vis2'] = []
-        self.session['vis3'] = []
-        self.session['vis4'] = []
-        self.session['color'] = []
-        self.session['image'] = []
-        self.session['audio'] = []
-        self.session['audio2'] = []
-        self.session['vis'] = []
-        self.session['numbers'] = []
-        self.session['operation'] = []
-        
-        self.session['position1_input'] = []
-        self.session['position2_input'] = []
-        self.session['position3_input'] = []
-        self.session['position4_input'] = []
-        self.session['vis1_input'] = []
-        self.session['vis2_input'] = []
-        self.session['vis3_input'] = []
-        self.session['vis4_input'] = []
-        self.session['visvis_input'] = []
-        self.session['visaudio_input'] = []
-        self.session['color_input'] = []
-        self.session['audiovis_input'] = []
-        self.session['image_input'] = []
-        self.session['audio_input'] = []
-        self.session['audio2_input'] = []
-        self.session['arithmetic_input'] = []
-
-        self.session['position1_rt'] = [] # reaction times
-        self.session['position2_rt'] = [] 
-        self.session['position3_rt'] = [] 
-        self.session['position4_rt'] = [] 
-        self.session['vis1_rt'] = []
-        self.session['vis2_rt'] = []
-        self.session['vis3_rt'] = []
-        self.session['vis4_rt'] = []
-        self.session['visvis_rt'] = []
-        self.session['visaudio_rt'] = []
-        self.session['color_rt'] = []
-        self.session['audiovis_rt'] = []
-        self.session['image_rt'] = []
-        self.session['audio_rt'] = []
-        self.session['audio2_rt'] = []
-        #self.session['arithmetic_rt'] = []
+        for name in ('position1', 'position2', 'position3', 'position4',
+             'vis1', 'vis2', 'vis3', 'vis4',
+            'color', 'image', 'audio', 'audio2'
+            ):
+            self.session[name] = []
+            self.session["%s_input" % name] = []
+            self.session["%s_rt"    % name] = [] # reaction times
+        for name in ('vis', 'numbers', 'operation', 'visvis_input',
+            'visaudio_input', 'audiovis_input', 'arithmetic_input', 'visvis_rt',
+            'visaudio_rt', 'audiovis_rt' # , 'arithmetic_rt'
+            ):
+            self.session[name] = []
 
     def save_input(self):
         for k, v in mode.current_stim.items():
@@ -3723,13 +3907,13 @@ class Stats:
 
         self.session['operation'].append(mode.current_operation)
         self.session['arithmetic_input'].append(arithmeticAnswerLabel.parse_answer())
-            
+
 
     def submit_session(self, percent, category_percents):
         global musicplayer
         global applauseplayer
         self.history.append([mode.session_number, mode.mode, mode.back, percent, mode.manual])
-        
+
         if ATTEMPT_TO_SAVE_STATS:
             try:
                 sep = STATS_SEPARATOR
@@ -3768,17 +3952,17 @@ class Stats:
                 statsfile.close()
                 if CLINICAL_MODE:
                     picklefile = open(os.path.join(get_data_dir(), STATS_BINARY), 'ab')
-                    pickle.dump([strftime("%Y-%m-%d %H:%M:%S"), mode.short_name(), 
+                    pickle.dump([strftime("%Y-%m-%d %H:%M:%S"), mode.short_name(),
                                  percent, mode.mode, mode.back, mode.ticks_per_trial,
                                  mode.num_trials_total, int(mode.manual),
                                  mode.session_number, category_percents['position1'],
                                  category_percents['audio'], category_percents['color'],
                                  category_percents['visvis'], category_percents['audiovis'],
                                  category_percents['arithmetic'], category_percents['image'],
-                                 category_percents['visaudio'], category_percents['audio2'], 
+                                 category_percents['visaudio'], category_percents['audio2'],
                                  category_percents['position2'], category_percents['position3'],
-                                 category_percents['position4'], 
-                                 category_percents['vis1'], category_percents['vis2'], 
+                                 category_percents['position4'],
+                                 category_percents['vis1'], category_percents['vis2'],
                                  category_percents['vis3'], category_percents['vis4']],
                                 picklefile, protocol=2)
                     picklefile.close()
@@ -3790,37 +3974,31 @@ class Stats:
                     session['summary'] = outlist # that's what goes into stats.txt
                     session['cfg'] = cfg.__dict__
                     session['timestamp'] = strftime("%Y-%m-%d %H:%M:%S")
-                    session['mode'] = mode.mode
-                    session['n'] = mode.back
+                    session['mode']   = mode.mode
+                    session['n']      = mode.back
                     session['manual'] = mode.manual
                     session['trial_duration'] = mode.ticks_per_trial * TICK_DURATION
-                    session['trials'] = mode.num_trials_total
+                    session['trials']  = mode.num_trials_total
                     session['session'] = self.session
                     pickle.dump(session, picklefile)
                     picklefile.close()
-            except:
-                quit_with_error(_('Error writing to stats file\n%s') % 
+            except Exception as e:
+                debug_msg(e)
+                quit_with_error(_('Error writing to stats file\n%s') %
                                 os.path.join(get_data_dir(), cfg.STATSFILE),
                                 _('\nPlease check file and directory permissions.'))
 
-        perfect = False        
-        awesome = False
-        great = False
-        good = False
-        advance = False
-        fallback = False
-        
+        perfect = awesome = great = good = advance = fallback = False
+
         if not mode.manual:
             if percent >= get_threshold_advance():
                 mode.back += 1
-                mode.num_trials_total = mode.num_trials + mode.num_trials_factor * mode.back ** mode.num_trials_exponent
+                mode.num_trials_total = (mode.num_trials +
+                    mode.num_trials_factor * mode.back ** mode.num_trials_exponent)
                 mode.progress = 0
                 circles.update()
                 if cfg.USE_APPLAUSE:
-                    #applauseplayer = pyglet.media.ManagedSoundPlayer()
-                    applauseplayer.queue(random.choice(applausesounds))
-                    applauseplayer.volume = cfg.SFX_VOLUME
-                    applauseplayer.play()
+                    play_applause()
                 advance = True
             elif mode.back > 1 and percent < get_threshold_fallback():
                 if cfg.JAEGGI_MODE:
@@ -3836,36 +4014,26 @@ class Stats:
                     else:
                         mode.progress += 1
                         circles.update()
-    
+
             if percent == 100: perfect = True
             elif percent >= get_threshold_advance(): awesome = True
             elif percent >= (get_threshold_advance() + get_threshold_fallback()) // 2: great = True
             elif percent >= get_threshold_fallback(): good = True
             congratsLabel.update(True, advance, fallback, awesome, great, good, perfect)
-        
+
         if mode.manual and not cfg.USE_MUSIC_MANUAL:
             return
-        
+
         if cfg.USE_MUSIC:
-            musicplayer = pyglet.media.Player()
-            if percent >= get_threshold_advance() and resourcepaths['music']['advance']:
-                musicplayer.queue(pyglet.media.load(random.choice(resourcepaths['music']['advance']), streaming = True))
-            elif percent >= (get_threshold_advance() + get_threshold_fallback()) // 2 and resourcepaths['music']['great']:
-                musicplayer.queue(pyglet.media.load(random.choice(resourcepaths['music']['great']), streaming = True))
-            elif percent >= get_threshold_fallback() and resourcepaths['music']['good']:
-                musicplayer.queue(pyglet.media.load(random.choice(resourcepaths['music']['good']), streaming = True))
-            else: 
-                return
-            musicplayer.volume = cfg.MUSIC_VOLUME
-            musicplayer.play()
-        
+            play_music(percent)
+
     def clear(self):
         self.history = []
         self.sessions_today = 0
         self.time_today = 0
         self.sessions_thours = 0
         self.time_thours = 0
-        
+
 def update_all_labels(do_analysis=False):
     updateLabel.update()
     congratsLabel.update()
@@ -3873,8 +4041,8 @@ def update_all_labels(do_analysis=False):
         analysisLabel.update()
     else:
         analysisLabel.update(skip=True)
-            
-    pyglet.clock.tick(poll=True) # Prevent music/applause skipping 1
+
+    if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music/applause skipping 1
 
     gameModeLabel.update()
     keysListLabel.update()
@@ -3884,15 +4052,15 @@ def update_all_labels(do_analysis=False):
     spaceLabel.update()
     chartTitleLabel.update()
     chartLabel.update()
-    
-    pyglet.clock.tick(poll=True) # Prevent music/applause skipping 2
-    
+
+    if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music/applause skipping 2
+
     averageLabel.update()
     todayLabel.update()
     trialsRemainingLabel.update()
-   
+
     update_input_labels()
-    
+
 def update_input_labels():
     arithmeticAnswerLabel.update()
     for label in input_labels:
@@ -3904,21 +4072,21 @@ def new_session():
     mode.tick -= 5 * (mode.flags[mode.mode]['multi'] - 1 )
     if cfg.MULTI_MODE == 'image':
         mode.tick -= 5 * (mode.flags[mode.mode]['multi'] - 1 )
-        
+
     mode.session_number += 1
     mode.trial_number = 0
     mode.started = True
     mode.paused = False
     circles.update()
-    
+
     mode.sound_mode  = random.choice(cfg.AUDIO1_SETS)
     mode.sound2_mode = random.choice(cfg.AUDIO2_SETS)
-    
+
     visuals[0].load_set()
     visuals[0].choose_random_images(8)
-    visuals[0].letters  = random.sample(sounds[mode.sound_mode ].keys(), 8)
-    visuals[0].letters2 = random.sample(sounds[mode.sound2_mode].keys(), 8)    
-    
+    visuals[0].letters  = random.sample(list(sounds[mode.sound_mode ].keys()), 8)
+    visuals[0].letters2 = random.sample(list(sounds[mode.sound2_mode].keys()), 8)
+
 
     for i in range(1, mode.flags[mode.mode]['multi']):
         visuals[i].load_set(visuals[0].image_set_index)
@@ -3928,16 +4096,16 @@ def new_session():
 
     global input_labels
     input_labels.extend(generate_input_labels()) # have to do this after images are loaded
-    
+
 
     mode.soundlist  = [sounds[mode.sound_mode][l]  for l in visuals[0].letters]
     mode.soundlist2 = [sounds[mode.sound2_mode][l] for l in visuals[0].letters2]
-            
+
     if cfg.JAEGGI_MODE:
         compute_bt_sequence()
-        
-    pyglet.clock.tick(poll=True) # Prevent music/applause skipping
-        
+
+    if preventMusicSkipping: pyglet.clock.tick(poll=True) # Prevent music/applause skipping
+
     if cfg.VARIABLE_NBACK:
         # compute variable n-back sequence using beta distribution
         mode.variable_list = []
@@ -3951,7 +4119,7 @@ def new_session():
 
 # this function handles the finish or cancellation of a session.
 def end_session(cancelled=False):
-    for label in input_labels: 
+    for label in input_labels:
         label.delete()
     while input_labels:
         input_labels.remove(input_labels[0])
@@ -3972,17 +4140,17 @@ def end_session(cancelled=False):
         if cfg.PANHANDLE_FREQUENCY:
             statsfile_path = os.path.join(get_data_dir(), cfg.STATSFILE)
             statsfile = open(statsfile_path, 'r')
-            sessions = len(statsfile.readlines()) # let's just hope people 
+            sessions = len(statsfile.readlines()) # let's just hope people
             statsfile.close()       # don't manually edit their statsfiles
             if (sessions % cfg.PANHANDLE_FREQUENCY) == 0 and not CLINICAL_MODE:
                 Panhandle(n=sessions)
-            
-    
-            
+
+
+
 # this function causes the key labels along the bottom to revert to their
 # "non-pressed" state for a new trial or when returning to the main screen.
 def reset_input():
-    for k in mode.inputs.keys():
+    for k in list(mode.inputs):
         mode.inputs[k] = False
         mode.input_rts[k] = 0.
     arithmeticAnswerLabel.reset_input()
@@ -3991,11 +4159,11 @@ def reset_input():
 # this handles the computation of a round with exactly 6 position and 6 audio matches
 # this function is not currently used -- compute_bt_sequence() is used instead
 ##def new_compute_bt_sequence(matches=6, modalities=['audio', 'vis']):
-##    # not ready for visaudio or audiovis, doesn't get 
+##    # not ready for visaudio or audiovis, doesn't get
 ##    seq = {}
 ##    for m in modalities:
 ##        seq[m] = [False]*mode.back + \
-##                 random.shuffle([True]*matches + 
+##                 random.shuffle([True]*matches +
 ##                                [False]*(mode.num_trials_total - mode.back - matches))
 ##        for i in range(mode.back):
 ##            seq[m][i] = random.randint(1,8)
@@ -4010,21 +4178,19 @@ def reset_input():
 ##    mode.bt_sequence = seq.values()
 
 def compute_bt_sequence():
-    bt_sequence = []
-    bt_sequence.append([])
-    bt_sequence.append([])    
+    bt_sequence = [[], []]
     for x in range(0, mode.num_trials_total):
         bt_sequence[0].append(0)
         bt_sequence[1].append(0)
-    
+
     for x in range(0, mode.back):
         bt_sequence[0][x] = random.randint(1, 8)
         bt_sequence[1][x] = random.randint(1, 8)
-        
+
     position = 0
     audio = 0
     both = 0
-    
+
     # brute force it
     while True:
         position = 0
@@ -4048,9 +4214,11 @@ def compute_bt_sequence():
                 both += 1
         if both == 2:
             break
-    
+
     mode.bt_sequence = bt_sequence
-    
+
+player = get_pyglet_media_Player()
+player2 = get_pyglet_media_Player()
 # responsible for the random generation of each new stimulus (audio, color, position)
 def generate_stimulus():
     # first, randomly generate all stimuli
@@ -4060,12 +4228,12 @@ def generate_stimulus():
         mode.current_stim['vis' + repr(s)] = random.randint(1, 8)
 
     #mode.current_stim['position1'] = random.randint(1, 8)
-    mode.current_stim['color'] = random.randint(1, 8)
-    mode.current_stim['vis'] = random.randint(1, 8)
-    mode.current_stim['audio'] = random.randint(1, 8)
+    mode.current_stim['color']  = random.randint(1, 8)
+    mode.current_stim['vis']    = random.randint(1, 8)
+    mode.current_stim['audio']  = random.randint(1, 8)
     mode.current_stim['audio2'] = random.randint(1, 8)
-    
-    
+
+
     # treat arithmetic specially
     operations = []
     if cfg.ARITHMETIC_USE_ADDITION: operations.append('add')
@@ -4073,13 +4241,13 @@ def generate_stimulus():
     if cfg.ARITHMETIC_USE_MULTIPLICATION: operations.append('multiply')
     if cfg.ARITHMETIC_USE_DIVISION: operations.append('divide')
     mode.current_operation = random.choice(operations)
-    
+
     if cfg.ARITHMETIC_USE_NEGATIVES:
         min_number = 0 - cfg.ARITHMETIC_MAX_NUMBER
     else:
         min_number = 0
     max_number = cfg.ARITHMETIC_MAX_NUMBER
-    
+
     if mode.current_operation == 'divide' and 'arithmetic' in mode.modalities[mode.mode]:
         if len(stats.session['position1']) >= mode.back:
             number_nback = stats.session['numbers'][mode.trial_number - mode.back - 1]
@@ -4100,9 +4268,9 @@ def generate_stimulus():
                 mode.current_stim['number'] = random.randint(min_number, max_number)
     else:
         mode.current_stim['number'] = random.randint(min_number, max_number)
-    
+
     multi = mode.flags[mode.mode]['multi']
-    
+
     real_back = mode.back
     if mode.flags[mode.mode]['crab'] == 1:
         real_back = 1 + 2*((mode.trial_number-1) % mode.back)
@@ -4130,7 +4298,7 @@ def generate_stimulus():
 
             back = None
             r1, r2 = random.random(), random.random()
-            if multi > 1: 
+            if multi > 1:
                 r2 = 3./2. * r2 # 33% chance of multi-stim reversal
 
             if  (r1 < cfg.CHANCE_OF_GUARANTEED_MATCH):
@@ -4149,12 +4317,12 @@ def generate_stimulus():
                 if back == real_back: back = None # if none of the above worked
                 elif DEBUG:
                     print('Forcing interference for %s' % current)
-            
-            if back:            
+
+            if back:
                 nback_trial = mode.trial_number - back - 1
                 matching_stim = stats.session[back_data][nback_trial]
                 # check for collisions in multi-stim mode
-                if multi > 1 and mod.startswith('position'): 
+                if multi > 1 and mod.startswith('position'):
                     potential_conflicts = set(range(1, multi+1)) - set([int(mod[-1])])
                     conflict_positions = [positions[i-1] for i in potential_conflicts]
                     if matching_stim in conflict_positions: # swap 'em
@@ -4179,7 +4347,7 @@ def generate_stimulus():
                     if mod == 'position':
                         positions[i] = mode.current_stim[mod + repr(i+1)]
 
-        
+
     # set static stimuli according to mode.
     # default position is 0 (center)
     # default color is 1 (red) or 2 (black)
@@ -4195,12 +4363,12 @@ def generate_stimulus():
                 mode.current_stim['vis'+repr(i)] = 0 # use squares
             elif cfg.MULTI_MODE == 'image':
                 mode.current_stim['vis'+repr(i)] = cfg.VISUAL_COLORS[0]
-        
+
     # in jaeggi mode, set using the predetermined sequence.
     if cfg.JAEGGI_MODE:
         mode.current_stim['position1'] = mode.bt_sequence[0][mode.trial_number - 1]
         mode.current_stim['audio'] = mode.bt_sequence[1][mode.trial_number - 1]
-    
+
     # initiate the chosen stimuli.
     # mode.current_stim['audio'] is a number from 1 to 8.
     if 'arithmetic' in mode.modalities[mode.mode] and mode.trial_number > mode.back:
@@ -4225,51 +4393,51 @@ def generate_stimulus():
             pos2 = (99.0, 0.0, 0.0)
             
         play_sound_managed(mode.soundlist2[mode.current_stim['audio2']-1], position=pos2, min_distance=100.0)
-        
-            
+
+
     if cfg.VARIABLE_NBACK and mode.trial_number > mode.back:
         variable = mode.variable_list[mode.trial_number - 1 - mode.back]
     else:
         variable = 0
     if DEBUG and multi < 2:
         print("trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
-                (mode.trial_number, mode.current_stim['position1'], mode.current_stim['audio'], 
+                (mode.trial_number, mode.current_stim['position1'], mode.current_stim['audio'],
                  mode.current_stim['color'], mode.current_stim['vis'], \
                  mode.current_stim['number'], mode.current_operation, variable))
     if multi == 1:
-        visuals[0].spawn(mode.current_stim['position1'], mode.current_stim['color'], 
-                         mode.current_stim['vis'], mode.current_stim['number'], 
+        visuals[0].spawn(mode.current_stim['position1'], mode.current_stim['color'],
+                         mode.current_stim['vis'], mode.current_stim['number'],
                          mode.current_operation, variable)
     else: # multi > 1
         for i in range(1, multi+1):
             if cfg.MULTI_MODE == 'color':
                 if DEBUG:
                     print("trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
-                        (mode.trial_number, mode.current_stim['position' + repr(i)], mode.current_stim['audio'], 
+                        (mode.trial_number, mode.current_stim['position' + repr(i)], mode.current_stim['audio'],
                         cfg.VISUAL_COLORS[i-1], mode.current_stim['vis'+repr(i)], \
                         mode.current_stim['number'], mode.current_operation, variable))
-                visuals[i-1].spawn(mode.current_stim['position'+repr(i)], cfg.VISUAL_COLORS[i-1], 
-                                   mode.current_stim['vis'+repr(i)], mode.current_stim['number'], 
+                visuals[i-1].spawn(mode.current_stim['position'+repr(i)], cfg.VISUAL_COLORS[i-1],
+                                   mode.current_stim['vis'+repr(i)], mode.current_stim['number'],
                                    mode.current_operation, variable)
             else:
                 if DEBUG:
                     print("trial=%i, \tpos=%i, \taud=%i, \tcol=%i, \tvis=%i, \tnum=%i,\top=%s, \tvar=%i" % \
-                        (mode.trial_number, mode.current_stim['position' + repr(i)], mode.current_stim['audio'], 
+                        (mode.trial_number, mode.current_stim['position' + repr(i)], mode.current_stim['audio'],
                         mode.current_stim['vis'+repr(i)], i, \
                         mode.current_stim['number'], mode.current_operation, variable))
-                visuals[i-1].spawn(mode.current_stim['position'+repr(i)], mode.current_stim['vis'+repr(i)], 
-                                   i,                            mode.current_stim['number'], 
+                visuals[i-1].spawn(mode.current_stim['position'+repr(i)], mode.current_stim['vis'+repr(i)],
+                                   i,                            mode.current_stim['number'],
                                    mode.current_operation, variable)
-                
+
 def toggle_manual_mode():
     if mode.manual:
         mode.manual = False
     else:
         mode.manual = True
-    
+
     #if not mode.manual:
         #mode.enforce_standard_mode()
-        
+
     update_all_labels()
 
 def set_user(newuser):
@@ -4289,7 +4457,7 @@ def set_user(newuser):
         mode.mode = stats.full_history[-1][1]
     stats.retrieve_progress()
     # text labels also need to be remade; until that's done, this remains commented out
-    #if cfg.BLACK_BACKGROUND: 
+    #if cfg.BLACK_BACKGROUND:
     #    glClearColor(0, 0, 0, 1)
     #else:
     #    glClearColor(1, 1, 1, 1)
@@ -4330,31 +4498,31 @@ def on_mouse_press(x, y, button, modifiers):
                 update_input_labels()
 
 @window.event
-def on_key_press(symbol, modifiers):    
+def on_key_press(symbol, modifiers):
     if symbol == key.D and (modifiers & key.MOD_CTRL):
         dump_pyglet_info()
-        
+
     elif mode.title_screen and not mode.draw_graph:
         if symbol == key.ESCAPE or symbol == key.X:
             window.on_close()
-            
+
         elif symbol == key.SPACE:
             mode.title_screen = False
             #mode.shrink_brain = True
             #pyglet.clock.schedule_interval(shrink_brain, 1/60.)
-            
+
         elif symbol == key.C and not cfg.JAEGGI_MODE:
             GameSelect()
-                                    
+
         elif symbol == key.I and not cfg.JAEGGI_MODE:
             ImageSelect()
 
         elif symbol == key.H:
             webbrowser.open_new_tab(WEB_TUTORIAL)
-                
+
         elif symbol == key.D and not CLINICAL_MODE:
             webbrowser.open_new_tab(WEB_DONATE)
-            
+
         elif symbol == key.V and DEBUG:
             OptionsScreen()
 
@@ -4363,60 +4531,60 @@ def on_key_press(symbol, modifiers):
             graph.parse_stats()
             graph.graph = mode.mode
             mode.draw_graph = True
-            
-        elif symbol == key.U: 
+
+        elif symbol == key.U:
             UserScreen()
-            
+
         elif symbol == key.L:
             LanguageScreen()
-                
+
         elif symbol == key.S and not cfg.JAEGGI_MODE:
             SoundSelect()
-            
+
         elif symbol == key.F:
             webbrowser.open_new_tab(WEB_FORUM)
-        
+
         elif symbol == key.O:
             edit_config_ini()
 
     elif mode.draw_graph:
         if symbol == key.ESCAPE or symbol == key.G or symbol == key.X:
             mode.draw_graph = False
-            
+
         #elif symbol == key.E and (modifiers & key.MOD_CTRL):
             #graph.export_data()
 
         elif symbol == key.N:
             graph.next_nonempty_mode()
-            
+
         elif symbol == key.M:
             graph.next_style()
-                                                    
+
     elif mode.saccadic:
         if symbol in (key.ESCAPE, key.E, key.X, key.SPACE):
             saccadic.stop()
-            
+
     elif not mode.started:
-        
+
         if symbol == key.ESCAPE or symbol == key.X:
             if cfg.SKIP_TITLE_SCREEN:
                 window.on_close()
             else:
                 mode.title_screen = True
-        
+
         elif symbol == key.SPACE:
             new_session()
-                        
+
         elif CLINICAL_MODE:
             pass
             #if symbol == key.H:
                 #webbrowser.open_new_tab(CLINICAL_TUTORIAL)
-        # No elifs below this line at this indentation will be 
+        # No elifs below this line at this indentation will be
         # executed in CLINICAL_MODE
-        
+
         elif symbol == key.E and cfg.WINDOW_FULLSCREEN:
             saccadic.start()
-        
+
         elif symbol == key.G:
 #            sound_stop()
             graph.parse_stats()
@@ -4429,7 +4597,7 @@ def on_key_press(symbol, modifiers):
                 gameModeLabel.flash()
                 spaceLabel.update()
                 sessionInfoLabel.update()
-                
+
         elif symbol == key.F2 and mode.manual:
             mode.back += 1
             gameModeLabel.flash()
@@ -4446,18 +4614,18 @@ def on_key_press(symbol, modifiers):
             mode.num_trials += 5
             mode.num_trials_total = mode.num_trials + mode.num_trials_factor * \
                 mode.back ** mode.num_trials_exponent
-            sessionInfoLabel.flash()            
-            
+            sessionInfoLabel.flash()
+
         elif symbol == key.F5 and mode.manual:
             if mode.ticks_per_trial < TICKS_MAX:
                 mode.ticks_per_trial += 1
                 sessionInfoLabel.flash()
-                        
+
         elif symbol == key.F6 and mode.manual:
             if mode.ticks_per_trial > TICKS_MIN:
                 mode.ticks_per_trial -= 1
                 sessionInfoLabel.flash()
-                
+
         elif symbol == key.C and (modifiers & key.MOD_CTRL):
             stats.clear()
             chartLabel.update()
@@ -4471,10 +4639,10 @@ def on_key_press(symbol, modifiers):
                 jaeggiWarningLabel.show()
                 return
             GameSelect()
-        
-        elif symbol == key.U: 
+
+        elif symbol == key.U:
             UserScreen()
-            
+
         elif symbol == key.I:
             if cfg.JAEGGI_MODE:
                 jaeggiWarningLabel.show()
@@ -4486,12 +4654,12 @@ def on_key_press(symbol, modifiers):
                 jaeggiWarningLabel.show()
                 return
             SoundSelect()
-            
+
         elif symbol == key.W:
             webbrowser.open_new_tab(WEB_SITE)
             if update_available:
                 window.on_close()
-            
+
         elif symbol == key.M:
             toggle_manual_mode()
             update_all_labels()
@@ -4500,28 +4668,28 @@ def on_key_press(symbol, modifiers):
 
         elif symbol == key.H:
             webbrowser.open_new_tab(WEB_TUTORIAL)
-                        
+
         elif symbol == key.D and not CLINICAL_MODE:
             webbrowser.open_new_tab(WEB_DONATE)
 
         elif symbol == key.J and 'morse' in cfg.AUDIO1_SETS or 'morse' in cfg.AUDIO2_SETS:
             webbrowser.open_new_tab(WEB_MORSE)
-                            
-                        
+
+
     # these are the keys during a running session.
-    elif mode.started:            
+    elif mode.started:
         if (symbol == key.ESCAPE or symbol == key.X) and not CLINICAL_MODE:
             end_session(cancelled = True)
-            
+
         elif symbol == key.P and not CLINICAL_MODE:
             mode.paused = not mode.paused
             pausedLabel.update()
             field.crosshair_update()
-                
+
         elif symbol == key.F8 and not CLINICAL_MODE:
             mode.hide_text = not mode.hide_text
             update_all_labels()
-                
+
         elif mode.tick != 0 and mode.trial_number > 0:
             if 'arithmetic' in mode.modalities[mode.mode]:
                 if symbol == key.BACKSPACE or symbol == key.DELETE:
@@ -4550,8 +4718,8 @@ def on_key_press(symbol, modifiers):
                     arithmeticAnswerLabel.input('8')
                 elif symbol == key._9 or symbol == key.NUM_9:
                     arithmeticAnswerLabel.input('9')
-                    
-            
+
+
             for k in mode.modalities[mode.mode]:
                 if not k == 'arithmetic':
                     keycode = cfg['KEY_%s' % k.upper()]
@@ -4559,9 +4727,9 @@ def on_key_press(symbol, modifiers):
                         mode.inputs[k] = True
                         mode.input_rts[k] = time.time() - mode.trial_starttime
                         update_input_labels()
-        
+
         if symbol == cfg.KEY_ADVANCE and mode.flags[mode.mode]['selfpaced']:
-            mode.tick = mode.ticks_per_trial-5
+            mode.tick = mode.ticks_per_trial-2
 
     return pyglet.event.EVENT_HANDLED
 # the loop where everything is drawn on the screen.
@@ -4584,22 +4752,22 @@ def on_draw():
             brain_icon.draw()
             logoUpperLabel.draw()
             logoLowerLabel.draw()
-    for label in input_labels: 
+    for label in input_labels:
         label.draw()
 
 # the event timer loop. Runs every 1/10 second. This loop controls the session
 # game logic.
 # During each trial the tick goes from 1 to ticks_per_trial-1 then back to 0.
 # tick = 1: Input from the last trial is saved. Input is reset.
-#             A new square appears and the sound cue plays. 
+#             A new square appears and the sound cue plays.
 # tick = 6: the square disappears.
 # tick = ticks_per_trial - 1: tick is reset to 0.
 # tick = 1: etc.
 def update(dt):
     if mode.started and not mode.paused: # only run the timer during a game
-        if not mode.flags[mode.mode]['selfpaced'] or \
-                mode.tick > mode.ticks_per_trial-6 or \
-                mode.tick < 5:
+        if (not mode.flags[mode.mode]['selfpaced'] or
+                mode.tick > mode.ticks_per_trial-6 or
+                mode.tick < 5):
             mode.tick += 1
         if mode.tick == 1:
             mode.show_missed = False
@@ -4638,7 +4806,7 @@ def pulsate(dt):
     b = 191 + min(64, int(80 * math.cos(math.radians(angle))))
     spaceLabel.label.color = (r, g, b, 255)
 #pyglet.clock.schedule_interval(pulsate, 1/20.)
-        
+
 #
 # --- END EVENT LOOP SECTION ----------------------------------------------
 #
@@ -4646,15 +4814,19 @@ def pulsate(dt):
 
 batch = pyglet.graphics.Batch()
 
-try: 
-    test_polygon = batch.add(4, GL_QUADS, None, ('v2i', (
-        100, 100,
-        100, 200,
-        200, 200,
-        200, 100)),
-              ('c3B', (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+try:
+    if have_shapes:
+        test_polygon = pyglet.shapes.Rectangle(100, 100, 200, 200, color=[0] * 3, batch=batch)
+    else:
+        test_polygon = batch.add(4, pyglet.gl.GL_QUADS, None, ('v2i', (
+            100, 100,
+            100, 200,
+            200, 200,
+            200, 100)),
+                ('c3B', (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
     test_polygon.delete()
-except:
+except Exception as e:
+    debug_msg(e)
     quit_with_error('Error creating test polygon. Full text of error:\n')
 
 # Instantiate the classes
@@ -4701,29 +4873,33 @@ update_all_labels()
 
 # Initialize brain sprite
 brain_icon = pyglet.sprite.Sprite(pyglet.image.load(random.choice(resourcepaths['misc']['brain'])))
-brain_icon.update(x=field.center_x - brain_icon.width//2,
-                           y=field.center_y - brain_icon.height//2)
+pos = (field.center_x - brain_icon.width//2,
+       field.center_y - brain_icon.height//2,
+       0)
+brain_icon.position = pos
+
 if cfg.BLACK_BACKGROUND:
     brain_graphic = pyglet.sprite.Sprite(pyglet.image.load(random.choice(resourcepaths['misc']['splash-black'])))
 else:
     brain_graphic = pyglet.sprite.Sprite(pyglet.image.load(random.choice(resourcepaths['misc']['splash'])))
-brain_graphic.update(x=field.center_x - brain_graphic.width//2,
-                           y=field.center_y - brain_graphic.height//2 + 40)
-
-def shrink_brain(dt):
-    brain_graphic.scale -= dt * 2
-    brain_graphic.x = field.center_x - brain_graphic.image.width//2  + 2 + (brain_graphic.image.width - brain_graphic.width) // 2
-    brain_graphic.y = field.center_y - brain_graphic.image.height//2 - 1 + (brain_graphic.image.height - brain_graphic.height) // 2
+pos = (field.center_x - brain_graphic.width//2,
+       field.center_y - brain_graphic.height//2 + 40,
+       0)
+brain_graphic.position = pos
+def scale_brain(dt):
+    brain_graphic.scale = dt
+    brain_graphic.x = field.center_x - brain_graphic.image.width//2  + scale_to_width(2) + (brain_graphic.image.width - brain_graphic.width) // 2
+    brain_graphic.y = field.center_y - brain_graphic.image.height//2 + scale_to_height(60) + (brain_graphic.image.height - brain_graphic.height) // 2
     window.clear()
     brain_graphic.draw()
     if brain_graphic.width < 56:
         mode.shrink_brain = False
-        pyglet.clock.unschedule(shrink_brain)
+        pyglet.clock.unschedule(scale_brain)
         brain_graphic.scale = 1
-        brain_graphic.update(x=field.center_x - brain_graphic.width//2,
-                           y=field.center_y - brain_graphic.height//2 + 40)
-        
+        brain_graphic.position = (field.center_x - brain_graphic.width//2,
+                           field.center_y - brain_graphic.height//2 + 40)
 
+scale_brain(scale_to_width(1))
 # If we had messages queued during loading (like from moving our data files), display them now
 messagequeue.reverse()
 for msg in messagequeue:
@@ -4736,4 +4912,3 @@ if __name__ == '__main__':
 
 # nothing below the line "pyglet.app.run()" will be executed until the
 # window is closed or ESC is pressed.
-
